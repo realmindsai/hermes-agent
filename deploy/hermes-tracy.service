@@ -1,5 +1,5 @@
 [Unit]
-Description=Hermes Agent - Tracy
+Description=Hermes Agent - Tracy (containerized)
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -8,14 +8,11 @@ Requires=docker.service
 Type=simple
 User=dewoller
 Group=dewoller
-WorkingDirectory=/tank/services/active_services/hermes
-Environment=PATH=/home/dewoller/.local/bin:/home/dewoller/.volta/bin:/usr/local/bin:/usr/bin:/bin
-Environment=HOME=/home/dewoller
-Environment=HERMES_HOME=/tank/services/active_services/hermes-tracy
+WorkingDirectory=/tank/services/active_services/hermes/deploy
 
 ExecStartPre=+/usr/local/bin/sops-decrypt.sh hermes-tracy
-ExecStartPre=/bin/ln -sf /run/secrets/hermes-tracy/.env /tank/services/active_services/hermes-tracy/.env
-ExecStart=/tank/services/active_services/hermes/.venv/bin/hermes gateway
+ExecStart=/usr/bin/docker compose -f /tank/services/active_services/hermes/deploy/docker-compose.yaml up --no-log-prefix hermes-tracy
+ExecStop=/usr/bin/docker compose -f /tank/services/active_services/hermes/deploy/docker-compose.yaml stop hermes-tracy
 ExecStopPost=+/bin/rm -rf /run/secrets/hermes-tracy
 
 Restart=always

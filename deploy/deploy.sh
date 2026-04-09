@@ -17,14 +17,9 @@ echo "=== Deploying Hermes Agent to ${HOST} ==="
 echo "--- Pulling latest code ---"
 ssh "${HOST}" "cd ${CODE_DIR} && git pull --ff-only"
 
-# Step 2: Update dependencies if pyproject.toml changed
-echo "--- Checking dependencies ---"
-ssh "${HOST}" bash -s <<'REMOTE_SCRIPT'
-set -euo pipefail
-cd /tank/services/active_services/hermes
-source .venv/bin/activate
-uv pip install -e ".[messaging,mcp,cli,cron]" --quiet 2>/dev/null || pip install -e ".[messaging,mcp,cli,cron]" --quiet
-REMOTE_SCRIPT
+# Step 2: Build container image
+echo "--- Building container image ---"
+ssh "${HOST}" "cd ${CODE_DIR} && docker build -f deploy/Dockerfile.gateway -t hermes-gateway:latest ."
 
 # Step 3: Update systemd units
 echo "--- Updating systemd services ---"
@@ -40,7 +35,7 @@ REMOTE_SCRIPT
 restart_instance() {
     local svc="hermes-$1"
     echo "--- Restarting ${svc} ---"
-    ssh "${HOST}" "sudo systemctl restart ${svc} && sleep 2 && systemctl is-active ${svc}"
+    ssh "${HOST}" "sudo systemctl restart ${svc} && sleep 5 && systemctl is-active ${svc}"
 }
 
 case "${INSTANCE}" in
@@ -52,5 +47,5 @@ esac
 
 echo ""
 echo "=== Deploy complete ==="
-echo "  Logs: ssh ${HOST} 'journalctl -u hermes-dee -f'"
-echo "  Logs: ssh ${HOST} 'journalctl -u hermes-tracy -f'"
+echo "  Logs: ssh ${HOST} 'docker logs -f hermes-dee'"
+echo "  Logs: ssh ${HOST} 'docker logs -f hermes-tracy'"

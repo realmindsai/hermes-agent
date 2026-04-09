@@ -1,0 +1,30 @@
+FROM nikolaik/python-nodejs:python3.12-nodejs22
+
+# System deps for native Python extensions, audio processing, and search
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential gcc libffi-dev ripgrep ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/hermes
+COPY pyproject.toml setup.py* setup.cfg* ./
+COPY hermes_constants.py ./
+
+# Install Python deps first (cached layer unless pyproject.toml changes)
+RUN pip install --no-cache-dir -e ".[messaging,mcp,cli,cron]" 2>/dev/null || \
+    pip install --no-cache-dir ".[messaging,mcp,cli,cron]"
+
+# Copy full source
+COPY . .
+
+# Re-install in editable mode with full source now present
+RUN pip install --no-cache-dir -e ".[messaging,mcp,cli,cron]"
+
+# WhatsApp bridge Node deps
+RUN cd scripts/whatsapp-bridge && npm install --prefer-offline --no-audit
+
+ENV HERMES_HOME=/data
+VOLUME ["/data"]
+
+ENTRYPOINT ["/opt/hermes/deploy/entrypoint-gateway.sh"]
+CMD ["gateway"]

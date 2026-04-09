@@ -1,0 +1,34 @@
+services:
+  hermes-dee:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.gateway
+    image: hermes-gateway:latest
+    container_name: hermes-dee
+    restart: "no"
+    volumes:
+      - /tank/services/active_services/hermes-dee:/data
+      # .env is a symlink to /run/secrets/hermes-dee/.env (SOPS-decrypted by systemd)
+      - /run/secrets/hermes-dee/.env:/data/.env:ro
+    environment:
+      - HERMES_HOME=/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  hermes-tracy:
+    image: hermes-gateway:latest
+    container_name: hermes-tracy
+    restart: "no"
+    volumes:
+      - /tank/services/active_services/hermes-tracy:/data
+      - /run/secrets/hermes-tracy/.env:/data/.env:ro
+    environment:
+      - HERMES_HOME=/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
