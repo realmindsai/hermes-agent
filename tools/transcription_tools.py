@@ -2,10 +2,11 @@
 """
 Transcription Tools Module
 
-Provides speech-to-text transcription with three providers:
+Provides speech-to-text transcription with multiple providers:
 
   - **local** (default, free) — faster-whisper running locally, no API key needed.
     Auto-downloads the model (~150 MB for ``base``) on first use.
+  - **parakeet** — external HTTP STT service, requires ``stt.parakeet.base_url``.
   - **groq** (free tier) — Groq Whisper API, requires ``GROQ_API_KEY``.
   - **openai** (paid) — OpenAI Whisper API, requires ``VOICE_TOOLS_OPENAI_KEY``.
 
@@ -24,6 +25,7 @@ Usage::
 """
 
 import logging
+import mimetypes
 import os
 import shlex
 import shutil
@@ -32,6 +34,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional, Dict, Any
 from urllib.parse import urljoin
+
+import httpx
 
 from utils import is_truthy_value
 from tools.managed_tool_gateway import resolve_managed_tool_gateway
@@ -69,6 +73,7 @@ DEFAULT_LOCAL_STT_LANGUAGE = "en"
 DEFAULT_STT_MODEL = os.getenv("STT_OPENAI_MODEL", "whisper-1")
 DEFAULT_GROQ_STT_MODEL = os.getenv("STT_GROQ_MODEL", "whisper-large-v3-turbo")
 DEFAULT_MISTRAL_STT_MODEL = os.getenv("STT_MISTRAL_MODEL", "voxtral-mini-latest")
+DEFAULT_PARAKEET_TIMEOUT_SECONDS = 120
 LOCAL_STT_COMMAND_ENV = "HERMES_LOCAL_STT_COMMAND"
 LOCAL_STT_LANGUAGE_ENV = "HERMES_LOCAL_STT_LANGUAGE"
 COMMON_LOCAL_BIN_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
@@ -131,6 +136,12 @@ def _has_openai_audio_backend() -> bool:
         return True
     except ValueError:
         return False
+
+
+def _has_parakeet_backend(stt_config: dict) -> bool:
+    """Return True when a Parakeet base URL is configured."""
+    parakeet_cfg = stt_config.get("parakeet", {})
+    return bool((parakeet_cfg.get("base_url") or "").strip())
 
 
 def _find_binary(binary_name: str) -> Optional[str]:
@@ -235,6 +246,14 @@ def _get_provider(stt_config: dict) -> str:
             logger.warning(
                 "STT provider 'mistral' configured but mistralai package "
                 "not installed or MISTRAL_API_KEY not set"
+            )
+            return "none"
+
+        if provider == "parakeet":
+            if _has_parakeet_backend(stt_config):
+                return "parakeet"
+            logger.warning(
+                "STT provider 'parakeet' configured but parakeet.base_url is missing"
             )
             return "none"
 
@@ -420,6 +439,74 @@ def _transcribe_local_command(file_path: str, model_name: str) -> Dict[str, Any]
     except Exception as e:
         logger.error("Unexpected error during local command transcription: %s", e, exc_info=True)
         return {"success": False, "transcript": "", "error": f"Local transcription failed: {e}"}
+
+
+def _transcribe_parakeet(file_path: str, model_name: str) -> Dict[str, Any]:
+    """Transcribe audio through an external Parakeet HTTP endpoint."""
+    del model_name  # Parakeet's server owns model selection.
+
+    stt_config = _load_stt_config()
+    base_url = (stt_config.get("parakeet", {}).get("base_url") or "").strip().rstrip("/")
+    if not base_url:
+        return {
+            "success": False,
+            "transcript": "",
+            "error": "Parakeet STT base_url is not configured",
+        }
+
+    content_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+
+    try:
+        with open(file_path, "rb") as audio_file:
+            response = httpx.post(
+                f"{base_url}/transcribe",
+                files={"file": (Path(file_path).name, audio_file, content_type)},
+                timeout=DEFAULT_PARAKEET_TIMEOUT_SECONDS,
+            )
+        response.raise_for_status()
+        payload = response.json()
+    except httpx.HTTPError as e:
+        logger.error("Parakeet transcription failed: %s", e, exc_info=True)
+        return {
+            "success": False,
+            "transcript": "",
+            "error": f"Parakeet transcription failed: {type(e).__name__}",
+        }
+    except ValueError as e:
+        logger.error("Parakeet returned invalid JSON: %s", e, exc_info=True)
+        return {
+            "success": False,
+            "transcript": "",
+            "error": "Parakeet transcription failed: invalid JSON response",
+        }
+    except PermissionError:
+        return {
+            "success": False,
+            "transcript": "",
+            "error": f"Permission denied: {file_path}",
+        }
+    except Exception as e:
+        logger.error("Parakeet transcription failed unexpectedly: %s", e, exc_info=True)
+        return {
+            "success": False,
+            "transcript": "",
+            "error": f"Parakeet transcription failed: {type(e).__name__}",
+        }
+
+    transcript = str(payload.get("text", "")).strip()
+    if not transcript:
+        return {
+            "success": False,
+            "transcript": "",
+            "error": "Parakeet returned an empty transcript",
+        }
+
+    logger.info(
+        "Transcribed %s via Parakeet (%d chars)",
+        Path(file_path).name,
+        len(transcript),
+    )
+    return {"success": True, "transcript": transcript, "provider": "parakeet"}
 
 # ---------------------------------------------------------------------------
 # Provider: groq (Whisper API — free tier)
@@ -635,6 +722,9 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         model_name = model or mistral_cfg.get("model", DEFAULT_MISTRAL_STT_MODEL)
         return _transcribe_mistral(file_path, model_name)
 
+    if provider == "parakeet":
+        return _transcribe_parakeet(file_path, model or "")
+
     # No provider available
     return {
         "success": False,
@@ -642,6 +732,7 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         "error": (
             "No STT provider available. Install faster-whisper for free local "
             f"transcription, configure {LOCAL_STT_COMMAND_ENV} or install a local whisper CLI, "
+            "set stt.parakeet.base_url for an external Parakeet service, "
             "set GROQ_API_KEY for free Groq Whisper, set MISTRAL_API_KEY for Mistral "
             "Voxtral Transcribe, or set VOICE_TOOLS_OPENAI_KEY "
             "or OPENAI_API_KEY for the OpenAI Whisper API."

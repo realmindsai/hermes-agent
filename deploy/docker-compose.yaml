@@ -5,11 +5,13 @@ services:
       dockerfile: deploy/Dockerfile.gateway
     image: hermes-gateway:latest
     container_name: hermes-dee
+    user: "1000:1004"
     restart: "no"
     volumes:
       - /tank/services/active_services/hermes-dee:/data
       - /run/secrets/hermes-dee/.env:/data/.env:ro
       - /tank/services/active_services/hermes/deploy/config-dee.yaml:/opt/config-seed.yaml:ro
+      - /tank/personal/obsidian-personal:/workspace/extra/obsidian
     environment:
       - HERMES_HOME=/data
     logging:

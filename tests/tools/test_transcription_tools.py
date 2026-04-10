@@ -11,6 +11,7 @@ import subprocess
 import wave
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 
@@ -201,6 +202,13 @@ class TestExplicitProviderRespected:
             from tools.transcription_tools import _get_provider
             result = _get_provider({})
             assert result == "groq"
+
+    def test_explicit_parakeet_without_base_url_returns_none(self):
+        from tools.transcription_tools import _get_provider
+
+        result = _get_provider({"provider": "parakeet"})
+
+        assert result == "none"
 
 
 # ============================================================================
@@ -732,6 +740,25 @@ class TestTranscribeAudioDispatch:
         assert result["success"] is True
         mock_openai.assert_called_once()
 
+    def test_dispatches_to_parakeet(self, sample_ogg):
+        config = {
+            "provider": "parakeet",
+            "parakeet": {"base_url": "http://172.17.0.1:8770"},
+        }
+        with patch("tools.transcription_tools._load_stt_config", return_value=config), \
+             patch("tools.transcription_tools._get_provider", return_value="parakeet"), \
+             patch(
+                 "tools.transcription_tools._transcribe_parakeet",
+                 return_value={"success": True, "transcript": "hi", "provider": "parakeet"},
+                 create=True,
+             ) as mock_parakeet:
+            from tools.transcription_tools import transcribe_audio
+            result = transcribe_audio(sample_ogg)
+
+        assert result["success"] is True
+        assert result["provider"] == "parakeet"
+        mock_parakeet.assert_called_once()
+
     def test_no_provider_returns_error(self, sample_ogg):
         with patch("tools.transcription_tools._load_stt_config", return_value={}), \
              patch("tools.transcription_tools._get_provider", return_value="none"):
@@ -1039,3 +1066,65 @@ class TestTranscribeAudioMistralDispatch:
             transcribe_audio(sample_ogg, model="voxtral-mini-2602")
 
         assert mock_mistral.call_args[0][1] == "voxtral-mini-2602"
+
+
+# ============================================================================
+# _transcribe_parakeet
+# ============================================================================
+
+
+class TestTranscribeParakeet:
+    def test_successful_transcription(self, sample_ogg):
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"text": "hello from parakeet"}
+
+        with patch(
+            "tools.transcription_tools._load_stt_config",
+            return_value={"parakeet": {"base_url": "http://172.17.0.1:8770"}},
+        ), patch("httpx.post", return_value=response) as mock_post:
+            from tools.transcription_tools import _transcribe_parakeet
+
+            result = _transcribe_parakeet(sample_ogg, "ignored")
+
+        assert result == {
+            "success": True,
+            "transcript": "hello from parakeet",
+            "provider": "parakeet",
+        }
+        mock_post.assert_called_once()
+
+    def test_http_error_returns_failure(self, sample_ogg):
+        response = MagicMock()
+        response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "bad gateway",
+            request=httpx.Request("POST", "http://172.17.0.1:8770/transcribe"),
+            response=httpx.Response(502),
+        )
+
+        with patch(
+            "tools.transcription_tools._load_stt_config",
+            return_value={"parakeet": {"base_url": "http://172.17.0.1:8770"}},
+        ), patch("httpx.post", return_value=response):
+            from tools.transcription_tools import _transcribe_parakeet
+
+            result = _transcribe_parakeet(sample_ogg, "ignored")
+
+        assert result["success"] is False
+        assert "Parakeet transcription failed" in result["error"]
+
+    def test_empty_text_returns_failure(self, sample_ogg):
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"text": "   "}
+
+        with patch(
+            "tools.transcription_tools._load_stt_config",
+            return_value={"parakeet": {"base_url": "http://172.17.0.1:8770"}},
+        ), patch("httpx.post", return_value=response):
+            from tools.transcription_tools import _transcribe_parakeet
+
+            result = _transcribe_parakeet(sample_ogg, "ignored")
+
+        assert result["success"] is False
+        assert "empty transcript" in result["error"].lower()

@@ -104,6 +104,8 @@ All documentation lives at **[hermes-agent.nousresearch.com/docs](https://hermes
 | [CLI Reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) | All commands and flags |
 | [Environment Variables](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) | Complete env var reference |
 
+RMAI internal Totoro deployment notes live in [deploy/totoro_docker_install.md](deploy/totoro_docker_install.md).
+
 ---
 
 ## Migrating from OpenClaw

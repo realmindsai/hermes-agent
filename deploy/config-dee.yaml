@@ -7,12 +7,17 @@ model:
 
 terminal:
   backend: "local"
-  cwd: "/workspace"
+  cwd: "/workspace/extra/obsidian"
   timeout: 180
   lifetime_seconds: 300
 
 memory:
   mode: "local"
+
+stt:
+  provider: "parakeet"
+  parakeet:
+    base_url: "http://172.17.0.1:8770"
 
 # MCP servers — connect to host services via Docker bridge gateway
 # Bearer token from JOT_TOKEN env var (shared auth.yaml across all MCP servers)

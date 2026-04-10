@@ -654,11 +654,13 @@ platform_toolsets:
 # Voice Transcription (Speech-to-Text)
 # =============================================================================
 # Automatically transcribe voice messages on messaging platforms.
-# Providers: local (free, faster-whisper) | groq (free tier) | openai (Whisper API) | mistral (Voxtral Transcribe)
+# Providers: local (free, faster-whisper) | parakeet (HTTP service) | groq (free tier) | openai (Whisper API) | mistral (Voxtral Transcribe)
 # Set the corresponding API key in .env: GROQ_API_KEY, OPENAI_API_KEY, or MISTRAL_API_KEY.
 stt:
   enabled: true
   # provider: "local"          # auto-detected if omitted
+  # parakeet:
+  #   base_url: "http://172.17.0.1:8770"
   model: "whisper-1"  # whisper-1 (cheapest) | gpt-4o-mini-transcribe | gpt-4o-transcribe
   # mistral:
   #   model: "voxtral-mini-latest"  # voxtral-mini-latest | voxtral-mini-2602
