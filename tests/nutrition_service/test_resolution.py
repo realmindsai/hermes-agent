@@ -1,3 +1,6 @@
+import math
+
+import pytest
 from pydantic import ValidationError
 
 from nutrition_service.contracts import CandidateModel
@@ -44,6 +47,28 @@ def test_candidate_model_rejects_missing_reason_text():
         raise AssertionError("Expected ValidationError for missing reason_text")
 
 
+@pytest.mark.parametrize(
+    ("confidence", "expected_fragment"),
+    [
+        (True, "confidence"),
+        ("0.91", "confidence"),
+        (math.nan, "confidence"),
+    ],
+)
+def test_candidate_model_rejects_non_finite_confidence(confidence, expected_fragment):
+    try:
+        CandidateModel(
+            candidate_id="cand-4",
+            title="Protein bar",
+            confidence=confidence,
+            reason_text="matched wrapper text",
+        )
+    except ValidationError as exc:
+        assert expected_fragment in str(exc)
+    else:
+        raise AssertionError("Expected ValidationError for invalid confidence")
+
+
 def test_choose_packaged_profile_prefers_label_observation():
     chosen = choose_packaged_profile(
         label_profile={"profile_kind": "label_observation", "energy_kcal": 230},
@@ -84,3 +109,22 @@ def test_rank_candidates_prefers_longer_reason_when_confidence_ties():
     ])
 
     assert ranked[0]["title"] == "Bar B"
+
+
+def test_rank_candidates_orders_candidate_models():
+    ranked = rank_candidates([
+        CandidateModel(
+            candidate_id="cand-5",
+            title="Chocolate bar",
+            confidence=0.71,
+            reason_text="generic visual guess",
+        ),
+        CandidateModel(
+            candidate_id="cand-6",
+            title="Carman's protein bar",
+            confidence=0.88,
+            reason_text="matched wrapper text",
+        ),
+    ])
+
+    assert ranked[0].title == "Carman's protein bar"

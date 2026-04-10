@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from typing import Annotated
+
+from pydantic import BaseModel, Field
 
 
 class CandidateModel(BaseModel):
@@ -8,5 +10,5 @@ class CandidateModel(BaseModel):
     protein_g: float | None = None
     carbs_g: float | None = None
     fat_g: float | None = None
-    confidence: float
+    confidence: Annotated[float, Field(strict=True, allow_inf_nan=False)]
     reason_text: str
