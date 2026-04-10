@@ -10,6 +10,8 @@ def test_create_schema_creates_core_tables():
 
     tables = set(inspect(engine).get_table_names())
     assert "source_product_off" in tables
+    assert "source_food_fsanz" in tables
+    assert "source_food_usda" in tables
     assert "food_item" in tables
     assert "nutrient_profile" in tables
     assert "image_asset" in tables

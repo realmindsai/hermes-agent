@@ -1,4 +1,6 @@
+import csv
 from dataclasses import dataclass
+from pathlib import Path
 
 
 def _pick_number(*values: object) -> float | None:
@@ -25,6 +27,11 @@ class FsanzImportRow:
     raw_payload: dict
 
 
+def load_fsanz_rows(path: str | Path) -> list[dict]:
+    with Path(path).open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
 def normalize_fsanz_row(row: dict) -> FsanzImportRow:
     return FsanzImportRow(
         food_id=row.get("Food ID"),
@@ -35,4 +42,3 @@ def normalize_fsanz_row(row: dict) -> FsanzImportRow:
         fat_g=_pick_number(row.get("Fat, g")),
         raw_payload=row,
     )
-

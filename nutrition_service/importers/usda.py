@@ -1,4 +1,6 @@
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 
 def _pick_number(*values: object) -> float | None:
@@ -26,6 +28,19 @@ class UsdaImportFood:
     carbs_g: float | None
     fat_g: float | None
     raw_payload: dict
+
+
+def load_usda_foods(path: str | Path) -> list[dict]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(payload, list):
+        return [food for food in payload if isinstance(food, dict)]
+    if isinstance(payload, dict):
+        foods: list[dict] = []
+        for value in payload.values():
+            if isinstance(value, list):
+                foods.extend(food for food in value if isinstance(food, dict))
+        return foods
+    raise ValueError("USDA import expects a JSON array or a dataset object containing food lists.")
 
 
 def normalize_usda_food(food: dict) -> UsdaImportFood:

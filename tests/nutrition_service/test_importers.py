@@ -1,9 +1,9 @@
 from click.testing import CliRunner
 
 from nutrition_service.cli import cli
-from nutrition_service.importers.fsanz import normalize_fsanz_row
-from nutrition_service.importers.off import normalize_off_record
-from nutrition_service.importers.usda import normalize_usda_food
+from nutrition_service.importers.fsanz import load_fsanz_rows, normalize_fsanz_row
+from nutrition_service.importers.off import load_off_records, normalize_off_record
+from nutrition_service.importers.usda import load_usda_foods, normalize_usda_food
 
 
 def test_normalize_off_record_extracts_core_nutrients():
@@ -83,27 +83,75 @@ def test_normalize_usda_food_preserves_first_valid_duplicate_nutrient_value():
     assert normalized.fat_g == 9
 
 
+def test_load_off_records_accepts_products_wrapper(tmp_path):
+    path = tmp_path / "off.json"
+    path.write_text(
+        '{"products":[{"code":"930000000001","product_name":"Test Bar"}]}',
+        encoding="utf-8",
+    )
+
+    loaded = load_off_records(path)
+
+    assert loaded == [{"code": "930000000001", "product_name": "Test Bar"}]
+
+
+def test_load_fsanz_rows_reads_csv_rows(tmp_path):
+    path = tmp_path / "fsanz.csv"
+    path.write_text('Food ID,Food Name,"Energy, kcal"\nA001,Boiled egg,155\n', encoding="utf-8")
+
+    loaded = load_fsanz_rows(path)
+
+    assert loaded == [{"Food ID": "A001", "Food Name": "Boiled egg", "Energy, kcal": "155"}]
+
+
+def test_load_usda_foods_flattens_known_dataset_sections(tmp_path):
+    path = tmp_path / "usda.json"
+    path.write_text(
+        (
+            '{"FoundationFoods":[{"fdcId":123,"description":"Egg"}],'
+            '"BrandedFoods":[{"fdcId":456,"description":"Bar"}]}'
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_usda_foods(path)
+
+    assert loaded == [
+        {"fdcId": 123, "description": "Egg"},
+        {"fdcId": 456, "description": "Bar"},
+    ]
+
+
 def test_import_commands_accept_existing_files_and_reject_missing_files(tmp_path):
     runner = CliRunner()
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'nutrition.sqlite3'}"
     existing_paths = {
         "import-off": tmp_path / "off.json",
         "import-fsanz": tmp_path / "fsanz.csv",
         "import-usda": tmp_path / "usda.json",
     }
 
-    for path in existing_paths.values():
-        path.write_text("[]", encoding="utf-8")
+    existing_paths["import-off"].write_text("[]", encoding="utf-8")
+    existing_paths["import-fsanz"].write_text("Food ID,Food Name\n", encoding="utf-8")
+    existing_paths["import-usda"].write_text("[]", encoding="utf-8")
 
     for command, path in existing_paths.items():
-        result = runner.invoke(cli, [command, str(path)])
+        result = runner.invoke(
+            cli,
+            [command, str(path)],
+            env={"NUTRITION_SERVICE_DATABASE_URL": database_url},
+        )
 
         assert result.exit_code == 0
-        assert f"{command} {path}" in result.output
 
     missing_path = tmp_path / "missing.json"
 
     for command in existing_paths:
-        result = runner.invoke(cli, [command, str(missing_path)])
+        result = runner.invoke(
+            cli,
+            [command, str(missing_path)],
+            env={"NUTRITION_SERVICE_DATABASE_URL": database_url},
+        )
 
         assert result.exit_code != 0
         assert "does not exist" in result.output

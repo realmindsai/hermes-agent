@@ -12,7 +12,39 @@ class SourceProductOff(Base):
     barcode: Mapped[str | None] = mapped_column(String(64), index=True)
     product_name: Mapped[str | None] = mapped_column(Text)
     brand_name: Mapped[str | None] = mapped_column(Text)
+    serving_size_text: Mapped[str | None] = mapped_column(Text)
+    energy_kcal: Mapped[float | None] = mapped_column(Float)
+    protein_g: Mapped[float | None] = mapped_column(Float)
+    carbs_g: Mapped[float | None] = mapped_column(Float)
+    fat_g: Mapped[float | None] = mapped_column(Float)
     nutriments_raw: Mapped[dict | None] = mapped_column(JSON)
+    raw_payload: Mapped[dict] = mapped_column(JSON)
+
+
+class SourceFoodFsanz(Base):
+    __tablename__ = "source_food_fsanz"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    food_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    food_name: Mapped[str | None] = mapped_column(Text)
+    energy_kcal: Mapped[float | None] = mapped_column(Float)
+    protein_g: Mapped[float | None] = mapped_column(Float)
+    carbs_g: Mapped[float | None] = mapped_column(Float)
+    fat_g: Mapped[float | None] = mapped_column(Float)
+    raw_payload: Mapped[dict] = mapped_column(JSON)
+
+
+class SourceFoodUsda(Base):
+    __tablename__ = "source_food_usda"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fdc_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    gtin_upc: Mapped[str | None] = mapped_column(String(64), index=True)
+    serving_size: Mapped[float | None] = mapped_column(Float)
+    serving_size_unit: Mapped[str | None] = mapped_column(String(32))
+    energy_kcal: Mapped[float | None] = mapped_column(Float)
+    protein_g: Mapped[float | None] = mapped_column(Float)
+    carbs_g: Mapped[float | None] = mapped_column(Float)
+    fat_g: Mapped[float | None] = mapped_column(Float)
     raw_payload: Mapped[dict] = mapped_column(JSON)
 
 

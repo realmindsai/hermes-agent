@@ -1,4 +1,6 @@
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 
 def _pick_number(*values: object) -> float | None:
@@ -27,6 +29,15 @@ class OffImportRow:
     raw_payload: dict
 
 
+def load_off_records(path: str | Path) -> list[dict]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if isinstance(payload, dict) and isinstance(payload.get("products"), list):
+        return [row for row in payload["products"] if isinstance(row, dict)]
+    raise ValueError("OFF import expects a JSON array or a {'products': [...]} object.")
+
+
 def normalize_off_record(row: dict) -> OffImportRow:
     nutriments = row.get("nutriments") or {}
     return OffImportRow(
@@ -40,4 +51,3 @@ def normalize_off_record(row: dict) -> OffImportRow:
         fat_g=_pick_number(nutriments.get("fat_serving"), nutriments.get("fat_100g")),
         raw_payload=row,
     )
-
