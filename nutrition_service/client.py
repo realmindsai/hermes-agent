@@ -23,7 +23,8 @@ class NutritionServiceClient:
         else:
             self._client = client
             self._owns_client = False
-            effective_base_url = resolved_base_url if explicit_base_url else str(client.base_url)
+            injected_base_url = str(client.base_url)
+            effective_base_url = resolved_base_url if explicit_base_url else (injected_base_url or _DEFAULT_BASE_URL)
 
         self._analyze_url = urljoin(effective_base_url.rstrip("/") + "/", "api/nutrition/v1/analyze")
 
