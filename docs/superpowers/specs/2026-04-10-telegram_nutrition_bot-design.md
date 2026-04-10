@@ -14,7 +14,7 @@ This design covers:
 - DM photo intake only
 - packaged foods plus plated meals
 - a separate nutrition service backed by Postgres
-- one-way import of the current `shopping_bot` local-file food-label data into the nutrition service
+- branded-food recognition and generic-food nutrient lookup from external datasets
 - candidate selection, correction handling, and adaptive ranking
 
 This design does not cover:
@@ -32,9 +32,11 @@ Hermes already has useful seams for this feature:
 - [`gateway/platforms/telegram.py`](/Users/dewoller/code/personal/hermes-agent/gateway/platforms/telegram.py) already receives Telegram photos, caches them locally, and supports inline callback buttons.
 - [`gateway/run.py`](/Users/dewoller/code/personal/hermes-agent/gateway/run.py) already enriches inbound image messages through the vision path before the agent responds.
 
-Those seams make Hermes a good Telegram shell for this feature, but not a good home for nutrition state. The current `shopping_bot` food-label data lives in a local file inside another repo or process. That is useful as seed data, but it is the wrong long-term runtime dependency for a production nutrition bot.
+Those seams make Hermes a good Telegram shell for this feature, but not a good home for nutrition state.
 
 There is also one Telegram constraint worth making explicit: the current adapter handles normal message updates cleanly, but this v1 should use a direct bot chat rather than a private channel. That keeps the product aligned with the existing adapter path instead of adding channel-post support before the core nutrition loop exists.
+
+The previously discussed `shopping_bot` or `shopping_deal_spotter` data is not load-bearing for this design. It is useful for shopping and product-name context, but it does not provide the calorie, macro, serving-size, or provenance model needed for a nutrition bot. V1 should not depend on it.
 
 ## Recommended Architecture
 
@@ -81,73 +83,140 @@ The service exposes a small API that Hermes can call. Hermes should not read the
 
 Postgres stores:
 
-- canonical branded products imported from `shopping_bot`
-- generic food entries for plated-meal fallback
-- product aliases and OCR aliases
-- meal logs
-- meal items
-- meal images
-- candidate sets shown to the user
-- correction events
-- learned user defaults
+- raw source records from branded and generic food datasets
+- normalized food identity and nutrient profiles
+- OCR and label observations
+- meal logs and meal candidates
+- correction events and learned user defaults
 
 The database should preserve both nutrition facts and interaction history. That separation matters. Nutrition facts are canonical data. Adaptive behavior comes from ranking and defaults, not from rewriting the source nutrition facts because the user corrected one meal.
 
-#### Shopping-Bot Importer
+## Source Strategy
 
-The current `shopping_bot` local file should be treated as an import source, not a live runtime dependency. A one-way importer should load its food-label records into Postgres on demand or on a schedule.
+V1 should separate `recognition` from `nutrition truth`.
 
-That gives v1 immediate grounding from real label data while creating a clean migration path to a proper nutrition backend.
+- `recognition sources` answer what product or food the image likely shows
+- `nutrition sources` answer which nutrient values should be used for the resolved item and serving
+- `user-confirmed observations` outrank both once the user has corrected the bot
+
+### Packaged-Food Sources
+
+For packaged foods, the service should resolve in this order:
+
+1. actual label and nutrition-panel OCR from the current image
+2. prior user-confirmed matches and snapshots
+3. Open Food Facts for branded identity and structured nutriment fields
+4. USDA branded foods as a fallback
+5. generic fallback only when forced
+
+### Plated-Meal Sources
+
+For plated meals, the service should resolve in this order:
+
+1. prior user corrections and personal defaults
+2. FSANZ AFCD as the primary Australian generic-food nutrient source
+3. USDA generic foods as a fallback
+4. derived component-level estimates when no direct match exists
+
+### What V1 Should Not Depend On
+
+V1 should not depend on:
+
+- `shopping_deal_spotter`
+- live retailer price data
+- shopping catalog feeds
+- private Telegram channels
+
+Those things may be useful later, but they do not solve the nutrient-truth problem.
+
+### Licensing Boundary
+
+Raw source tables must remain separate. The nutrition service should not build one merged raw source table that copies Open Food Facts, FSANZ, and USDA data into a single undifferentiated store.
+
+Instead, the service should:
+
+- keep source-specific raw tables
+- create app-level normalized entities that point back to source rows
+- store the nutrient snapshot actually used for each meal event
+- preserve provenance for every nutrient profile
+
+This avoids mixing source licenses into one opaque database and makes audit and debugging straightforward.
 
 ## Data Model
 
-V1 needs a small but explicit model:
+V1 needs an explicit model with three layers: raw sources, app identity, and meal interactions.
 
-- `products`
-  Stores canonical branded food records, serving definitions, calories, macros, and any available micros.
-- `product_aliases`
-  Stores normalized names, OCR variants, and brand/product text that should resolve to a canonical product.
-- `generic_foods`
-  Stores generic nutrition entries for foods that are commonly detected in plated meals.
-- `meal_logs`
-  Stores one meal event per user submission.
-- `meal_items`
-  Stores the resolved foods and portions for a logged meal.
-- `meal_images`
-  Stores references to the uploaded image cache paths or durable image identifiers.
-- `candidate_sets`
-  Stores the ranked options shown back to the user, with confidence and explanation text.
-- `corrections`
-  Stores what the bot proposed, what the user selected or typed, and how the final result differed.
-- `user_defaults`
-  Stores learned preferences such as recurring meals, preferred aliases, and typical portions.
+### Raw Source Tables
 
-This model is enough for v1 logging and learning without dragging in broader health-platform concerns.
+- `source_product_off`
+  Stores Open Food Facts branded-product records, including barcode, product name, brand, quantity text, serving text, image URLs, nutriments JSON, and raw payload.
+- `source_food_fsanz`
+  Stores FSANZ generic-food records and source metadata.
+- `source_food_fsanz_nutrient`
+  Stores FSANZ nutrient rows keyed to `source_food_fsanz`.
+- `source_food_usda`
+  Stores USDA generic and branded-food records and source metadata.
+- `source_food_usda_nutrient`
+  Stores USDA nutrient rows keyed to `source_food_usda`.
+
+### App Identity Tables
+
+- `food_item`
+  Stores the app-level food identity used by the bot. `kind` should distinguish `packaged`, `generic`, and `meal`.
+- `food_item_alias`
+  Stores aliases, barcode mappings, user labels, and normalized recognition text.
+- `food_item_source_link`
+  Stores links from a `food_item` to one or more source rows with source role and confidence.
+
+### Nutrient And Evidence Tables
+
+- `nutrient_profile`
+  Stores the normalized nutrient vector actually used by the app. `profile_kind` should distinguish `source_import`, `label_observation`, `user_confirmed`, and `derived_recipe`.
+- `image_asset`
+  Stores Telegram image references and cached storage paths.
+- `label_observation`
+  Stores OCR output from an actual product image, including parsed barcode, product text, serving text, parsed nutrient rows, confidence, and review status.
+
+### Meal And Learning Tables
+
+- `analysis_request`
+  Stores one incoming analysis job per DM event.
+- `analysis_request_image`
+  Stores the ordered images attached to that request.
+- `meal_candidate_set`
+  Stores the candidate batch shown to the user.
+- `meal_candidate`
+  Stores each ranked option, including macros, confidence, serving estimate, and explanation text.
+- `meal_log`
+  Stores the final accepted meal event, including the nutrient profile used and the source path.
+- `correction_event`
+  Stores what the bot proposed, what the user selected or typed, and how the final result was resolved.
+- `user_food_default`
+  Stores recurring servings and confirmed defaults for known foods.
+- `user_alias`
+  Stores short user-specific names for recurring foods and meals.
 
 ## Request Flow
 
 1. The user sends one or more meal photos to the nutrition bot in a direct message, optionally with a caption.
-2. Hermes caches the images and forwards an analysis request to the nutrition service.
-3. The nutrition service runs two grounded interpretation paths:
-   - `packaged-food path`: OCR and visual product recognition for brand, product name, serving text, and label cues
-   - `plated-meal path`: food-item and portion estimation for mixed meals
-4. The nutrition service grounds those guesses against canonical data:
-   - imported `shopping_bot` product records for branded items
-   - generic food entries for plated-meal fallback
-   - learned correction history and personal defaults for ranking
-5. The service chooses one of two response modes:
-   - `high-confidence packaged match`: auto-log the meal and return a compact confirmation with an obvious correction path
-   - `uncertain or plated-meal match`: return `2-3` ranked candidates for the user to choose from
-6. When candidate selection is needed, the service returns `2-3` ranked candidates with:
-   - meal title
-   - estimated calories, protein, carbs, and fat
-   - optional micronutrients when the source supports them
-   - confidence
-   - short explanation of why each candidate ranked where it did
-7. Hermes replies with inline buttons for the ranked choices when needed and supports free-text correction in the same conversation in both modes.
-8. The user's button pick or free-text correction is sent back to the nutrition service.
-9. The nutrition service resolves the final meal log, stores the correction event, updates learned defaults, and returns the logged result.
-10. Hermes replies with a short text confirmation.
+2. Hermes stores the image references in `image_asset`, creates an `analysis_request`, and forwards the request to the nutrition service.
+3. The nutrition service runs two interpretation paths in parallel:
+   - `packaged-food path`: detect wrapper text, barcode, brand, product name, and possible nutrition-panel content
+   - `plated-meal path`: detect meal components, portion cues, and recurring-meal hints
+4. If a label or nutrition panel is visible, the service creates a `label_observation`. That observation is evidence, not truth yet.
+5. The service resolves likely `food_item` matches:
+   - barcode exact match first
+   - then brand and product-name fuzzy match
+   - then user alias and correction history
+   - then broader source-backed candidates
+6. The service selects a nutrient basis:
+   - for packaged foods: confirmed label snapshot, current high-confidence label observation, existing user-confirmed profile, Open Food Facts, USDA branded fallback, then generic fallback
+   - for plated meals: existing user-confirmed profile, FSANZ, USDA generic fallback, then derived component estimate
+7. The service creates a `meal_candidate_set` with `2-3` ranked `meal_candidate` rows. Each candidate includes a title, serving estimate, calories, protein, carbs, fat, confidence, and a short reason line.
+8. Hermes replies with inline buttons for the candidates and also accepts free-text correction.
+9. If the user taps a button or types a correction, Hermes sends that context back to the nutrition service.
+10. The nutrition service resolves the final meal log, stores a `correction_event`, updates learned defaults when appropriate, and returns the logged result.
+11. Hermes replies with a short text confirmation.
 
 ## Candidate And Correction UX
 
@@ -168,9 +237,9 @@ Micronutrients should appear only when the source is good enough or when the use
 
 ### Candidate Selection
 
-For v1, high-confidence auto-log is allowed only for strong branded packaged-food matches. Plated meals should not silently auto-log in v1, even when the ranking is good. They should still surface `2-3` candidates so the user can correct portions and meal composition quickly.
+For v1, the system should default to showing `2-3` candidates. Strong branded packaged-food matches may auto-log later, but that should not be the default v1 behavior. Plated meals should never silently auto-log in v1, even when the ranking is good.
 
-When the service is not confident enough to auto-log, Hermes should present `2-3` candidates using inline buttons. Each candidate should map to a stable candidate identifier from the nutrition service, not to fragile text parsing in Telegram.
+Hermes should present `2-3` candidates using inline buttons. Each candidate should map to a stable candidate identifier from the nutrition service, not to fragile text parsing in Telegram.
 
 ### Free-Text Correction
 
@@ -198,7 +267,7 @@ It should learn from:
 
 It should not:
 
-- silently edit canonical nutrition facts in `products`
+- silently edit canonical nutrition facts in source-backed nutrient profiles
 - infer permanent facts from one ambiguous photo
 - auto-log low-confidence meals without showing candidates
 
@@ -220,11 +289,12 @@ V1 needs all three test layers.
 
 ### Unit
 
-- importer normalization from the current `shopping_bot` local-file shape into canonical nutrition records
+- source importer normalization for Open Food Facts, FSANZ, and USDA
 - candidate ranking rules
 - confidence thresholds
 - correction parsing
 - adaptive-learning updates
+- nutrient-profile precedence rules
 - response formatting
 
 ### Integration
@@ -232,8 +302,8 @@ V1 needs all three test layers.
 - Hermes DM photo intake to nutrition-service analysis request
 - inline-button candidate selection round trip
 - free-text correction round trip
-- Postgres persistence for meal logs, candidate sets, and corrections
-- importer load into Postgres
+- Postgres persistence for source records, nutrient profiles, meal logs, candidate sets, and corrections
+- OCR observation promotion into confirmed nutrient profiles
 
 ### E2E
 
@@ -259,11 +329,12 @@ The nutrition service should own Postgres migrations, importer runs, and audit q
 
 V1 rollout should be staged:
 
-1. Build the nutrition service with Postgres and importer support for the current `shopping_bot` file.
+1. Build the nutrition service with Postgres and importer support for Open Food Facts, FSANZ, and USDA.
 2. Stand up the dedicated Telegram nutrition bot profile in Hermes.
 3. Wire the DM photo analysis and candidate-selection loop.
-4. Add correction handling and adaptive ranking.
-5. Run end-to-end tests with real Telegram messages and representative meal photos.
-6. Seed the database from the current `shopping_bot` data before normal use.
+4. Add OCR-backed `label_observation` support for packaged foods.
+5. Add correction handling and adaptive ranking.
+6. Run end-to-end tests with real Telegram messages and representative meal photos.
+7. Seed the database with the initial external datasets before normal use.
 
-This rollout keeps the riskiest parts separate: data migration, image interpretation, and Telegram UX.
+This rollout keeps the riskiest parts separate: data import, image interpretation, and Telegram UX.
