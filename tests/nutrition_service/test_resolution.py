@@ -4,7 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from nutrition_service.contracts import CandidateModel
-from nutrition_service.resolution import choose_packaged_profile, rank_candidates
+from nutrition_service.resolution import (
+    build_source_candidates,
+    choose_packaged_profile,
+    rank_candidates,
+)
 
 
 def test_candidate_model_accepts_required_fields():
@@ -141,3 +145,27 @@ def test_rank_candidates_orders_candidate_models():
     ])
 
     assert ranked[0].title == "Carman's protein bar"
+
+
+def test_build_source_candidates_prefers_caption_match_and_limits_to_three():
+    candidates = build_source_candidates(
+        caption_text="chicken salad lunch",
+        off_rows=[
+            {"id": 1, "product_name": "Protein Bar", "brand_name": "Test Brand", "energy_kcal": 210.0},
+        ],
+        fsanz_rows=[
+            {"id": 2, "food_name": "Boiled egg", "energy_kcal": 155.0},
+        ],
+        usda_rows=[
+            {"id": 3, "description": "Chicken salad", "energy_kcal": 205.0},
+            {"id": 4, "description": "Chicken wrap", "energy_kcal": 230.0},
+        ],
+    )
+
+    assert [candidate["title"] for candidate in candidates] == [
+        "Chicken salad",
+        "Chicken wrap",
+        "Test Brand Protein Bar",
+    ]
+    assert candidates[0]["reason_text"] == "matched caption text against USDA source data"
+    assert candidates[0]["candidate_id"] == "usda:3"

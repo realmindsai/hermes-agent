@@ -74,6 +74,7 @@ class NutrientProfile(Base):
 class ImageAsset(Base):
     __tablename__ = "image_asset"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    analysis_request_id: Mapped[int | None] = mapped_column(ForeignKey("analysis_request.id"))
     telegram_file_id: Mapped[str | None] = mapped_column(String(255))
     storage_path: Mapped[str] = mapped_column(Text)
 
@@ -99,13 +100,20 @@ class AnalysisRequest(Base):
 class MealCandidate(Base):
     __tablename__ = "meal_candidate"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    analysis_request_id: Mapped[int] = mapped_column(ForeignKey("analysis_request.id"))
+    candidate_id: Mapped[str] = mapped_column(String(128), index=True)
     candidate_title: Mapped[str] = mapped_column(Text)
+    reason_text: Mapped[str] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(Float)
     calories: Mapped[float | None] = mapped_column(Float)
+    protein_g: Mapped[float | None] = mapped_column(Float)
+    carbs_g: Mapped[float | None] = mapped_column(Float)
+    fat_g: Mapped[float | None] = mapped_column(Float)
 
 
 class MealLog(Base):
     __tablename__ = "meal_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    analysis_request_id: Mapped[int | None] = mapped_column(ForeignKey("analysis_request.id"))
     title: Mapped[str] = mapped_column(Text)
     calories: Mapped[float | None] = mapped_column(Float)
