@@ -1380,7 +1380,7 @@ class TelegramAdapter(BasePlatformAdapter):
             return
         data = query.data
 
-        if data.startswith("nc:"):
+        if data.startswith("nc:") and os.getenv("HERMES_NUTRITION_BOT") == "1":
             if not query.message:
                 await query.answer(text="This nutrition selection has no chat context.")
                 return
@@ -1391,29 +1391,32 @@ class TelegramAdapter(BasePlatformAdapter):
                 chat_type = "group"
             elif chat.type in (ChatType.CHANNEL, "channel"):
                 chat_type = "channel"
+            elif chat.type not in (ChatType.PRIVATE, "private"):
+                chat_type = str(chat.type).split(".")[-1].lower()
 
-            source = self.build_source(
-                chat_id=str(chat.id),
-                chat_name=chat.title or (chat.full_name if hasattr(chat, "full_name") else None),
-                chat_type=chat_type,
-                user_id=str(query.from_user.id) if query.from_user else None,
-                user_name=query.from_user.full_name if query.from_user else None,
-                thread_id=(
-                    str(query.message.message_thread_id)
-                    if getattr(query.message, "message_thread_id", None)
-                    else None
-                ),
-            )
-            event = MessageEvent(
-                text=data,
-                source=source,
-                raw_message=query.message,
-                message_id=str(query.message.message_id),
-                internal=True,
-            )
-            await query.answer()
-            await self.handle_message(event)
-            return
+            if chat_type == "dm":
+                source = self.build_source(
+                    chat_id=str(chat.id),
+                    chat_name=chat.title or (chat.full_name if hasattr(chat, "full_name") else None),
+                    chat_type=chat_type,
+                    user_id=str(query.from_user.id) if query.from_user else None,
+                    user_name=query.from_user.full_name if query.from_user else None,
+                    thread_id=(
+                        str(query.message.message_thread_id)
+                        if getattr(query.message, "message_thread_id", None)
+                        else None
+                    ),
+                )
+                event = MessageEvent(
+                    text=data,
+                    source=source,
+                    raw_message=query.message,
+                    message_id=str(query.message.message_id),
+                    internal=True,
+                )
+                await query.answer()
+                await self.handle_message(event)
+                return
 
         # --- Model picker callbacks ---
         if data.startswith(("mp:", "mm:", "mb", "mx", "mg:")):

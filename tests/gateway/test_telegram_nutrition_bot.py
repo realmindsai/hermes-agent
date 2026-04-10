@@ -90,7 +90,8 @@ def test_build_candidate_rows_uses_nc_callback_data(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_callback_query_routes_nc_data_into_internal_message_event():
+async def test_callback_query_routes_nc_data_into_internal_message_event(monkeypatch):
+    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
     adapter = TelegramAdapter(PlatformConfig(enabled=True, token="test-token"))
     adapter.handle_message = AsyncMock()
 
@@ -123,3 +124,65 @@ async def test_callback_query_routes_nc_data_into_internal_message_event():
     assert event.source.user_id == "999"
     assert event.source.chat_type == "dm"
     query.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_callback_query_ignores_nc_data_when_nutrition_mode_is_off(monkeypatch):
+    monkeypatch.delenv("HERMES_NUTRITION_BOT", raising=False)
+    adapter = TelegramAdapter(PlatformConfig(enabled=True, token="test-token"))
+    adapter.handle_message = AsyncMock()
+
+    query = AsyncMock()
+    query.data = "nc:set-1:cand-7"
+    query.answer = AsyncMock()
+    query.message = MagicMock()
+    query.message.chat_id = 12345
+    query.message.message_id = 678
+    query.message.message_thread_id = None
+    query.message.chat = MagicMock()
+    query.message.chat.id = 12345
+    query.message.chat.type = "private"
+    query.message.chat.title = None
+    query.message.chat.full_name = None
+    query.from_user = MagicMock()
+    query.from_user.id = 999
+    query.from_user.full_name = "dw"
+
+    update = MagicMock()
+    update.callback_query = query
+
+    await adapter._handle_callback_query(update, MagicMock())
+
+    adapter.handle_message.assert_not_awaited()
+    query.answer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_callback_query_ignores_nc_data_for_non_dm_chat(monkeypatch):
+    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+    adapter = TelegramAdapter(PlatformConfig(enabled=True, token="test-token"))
+    adapter.handle_message = AsyncMock()
+
+    query = AsyncMock()
+    query.data = "nc:set-1:cand-7"
+    query.answer = AsyncMock()
+    query.message = MagicMock()
+    query.message.chat_id = -10012345
+    query.message.message_id = 678
+    query.message.message_thread_id = None
+    query.message.chat = MagicMock()
+    query.message.chat.id = -10012345
+    query.message.chat.type = "group"
+    query.message.chat.title = "lunch crew"
+    query.message.chat.full_name = None
+    query.from_user = MagicMock()
+    query.from_user.id = 999
+    query.from_user.full_name = "dw"
+
+    update = MagicMock()
+    update.callback_query = query
+
+    await adapter._handle_callback_query(update, MagicMock())
+
+    adapter.handle_message.assert_not_awaited()
+    query.answer.assert_not_awaited()
