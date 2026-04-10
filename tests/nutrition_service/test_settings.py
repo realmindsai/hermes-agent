@@ -7,16 +7,16 @@ from nutrition_service.settings import NutritionSettings
 def test_settings_read_database_and_bind_env(monkeypatch):
     monkeypatch.setenv(
         "NUTRITION_SERVICE_DATABASE_URL",
-        "postgresql+psycopg://nutrition:nutrition@localhost:5432/nutrition",
+        "postgresql+psycopg://nutrition:secret@localhost:6543/custom_nutrition",
     )
-    monkeypatch.setenv("NUTRITION_SERVICE_BIND_HOST", "127.0.0.1")
-    monkeypatch.setenv("NUTRITION_SERVICE_BIND_PORT", "8781")
+    monkeypatch.setenv("NUTRITION_SERVICE_BIND_HOST", "0.0.0.0")
+    monkeypatch.setenv("NUTRITION_SERVICE_BIND_PORT", "9999")
 
     settings = NutritionSettings()
 
-    assert settings.database_url.endswith("/nutrition")
-    assert settings.bind_host == "127.0.0.1"
-    assert settings.bind_port == 8781
+    assert settings.database_url == "postgresql+psycopg://nutrition:secret@localhost:6543/custom_nutrition"
+    assert settings.bind_host == "0.0.0.0"
+    assert settings.bind_port == 9999
 
 
 def test_cli_lists_expected_commands():
