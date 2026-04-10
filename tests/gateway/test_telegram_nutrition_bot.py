@@ -154,7 +154,7 @@ async def test_callback_query_ignores_nc_data_when_nutrition_mode_is_off(monkeyp
     await adapter._handle_callback_query(update, MagicMock())
 
     adapter.handle_message.assert_not_awaited()
-    query.answer.assert_not_awaited()
+    query.answer.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -185,4 +185,4 @@ async def test_callback_query_ignores_nc_data_for_non_dm_chat(monkeypatch):
     await adapter._handle_callback_query(update, MagicMock())
 
     adapter.handle_message.assert_not_awaited()
-    query.answer.assert_not_awaited()
+    query.answer.assert_awaited_once()

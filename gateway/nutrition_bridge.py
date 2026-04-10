@@ -93,8 +93,7 @@ class NutritionBridge:
             return "That nutrition selection is invalid."
         candidate_set_id, candidate_id = parsed
         if candidate_set_id != pending.get("candidate_set_id"):
-            self._state_store.clear_pending_candidate_set(session_key)
-            return "That nutrition selection is stale. Send the meal photo again."
+            return "That nutrition selection is stale. Use the latest buttons or send the meal photo again."
 
         result = await asyncio.to_thread(
             self._client.select_candidate,

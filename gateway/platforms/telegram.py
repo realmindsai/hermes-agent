@@ -1380,7 +1380,10 @@ class TelegramAdapter(BasePlatformAdapter):
             return
         data = query.data
 
-        if data.startswith("nc:") and os.getenv("HERMES_NUTRITION_BOT") == "1":
+        if data.startswith("nc:"):
+            if os.getenv("HERMES_NUTRITION_BOT") != "1":
+                await query.answer()
+                return
             if not query.message:
                 await query.answer(text="This nutrition selection has no chat context.")
                 return
@@ -1417,6 +1420,8 @@ class TelegramAdapter(BasePlatformAdapter):
                 await query.answer()
                 await self.handle_message(event)
                 return
+            await query.answer()
+            return
 
         # --- Model picker callbacks ---
         if data.startswith(("mp:", "mm:", "mb", "mx", "mg:")):

@@ -152,6 +152,35 @@ async def test_nc_callback_text_uses_pending_candidate_set(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_stale_nc_callback_preserves_newer_pending_candidate_set(monkeypatch):
+    client = _FakeNutritionClient()
+    runner = _make_runner(client)
+    runner.adapters[Platform.TELEGRAM] = SimpleNamespace(
+        _bot=SimpleNamespace(send_message=AsyncMock()),
+        send=AsyncMock(),
+    )
+    source = _make_source()
+    session_key = runner._session_key_for_source(source)
+    runner._nutrition_state_store.set_pending_candidate_set(
+        session_key,
+        candidate_set_id="set-2",
+        candidates=[{"candidate_id": "cand-2", "title": "Tuna sandwich"}],
+    )
+    event = MessageEvent(text="nc:set-1:cand-1", source=source, internal=True)
+
+    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+
+    result = await runner._handle_message(event)
+
+    assert result == "That nutrition selection is stale. Use the latest buttons or send the meal photo again."
+    assert client.select_calls == []
+    assert runner._nutrition_state_store.get_pending_candidate_set(session_key) == {
+        "candidate_set_id": "set-2",
+        "candidates": [{"candidate_id": "cand-2", "title": "Tuna sandwich"}],
+    }
+
+
+@pytest.mark.asyncio
 async def test_free_text_correction_uses_pending_candidate_set(monkeypatch):
     client = _FakeNutritionClient()
     runner = _make_runner(client)

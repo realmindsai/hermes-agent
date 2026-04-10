@@ -13,8 +13,12 @@ class NutritionServiceClient:
         base_url: str | object = _UNSET,
         client: httpx.Client | None = None,
     ) -> None:
-        explicit_base_url = base_url is not _UNSET
-        resolved_base_url = str(base_url) if explicit_base_url else _DEFAULT_BASE_URL
+        explicit_base_url = self._has_explicit_base_url(base_url)
+        resolved_base_url = (
+            self._normalize_base_url(base_url)
+            if explicit_base_url
+            else _DEFAULT_BASE_URL
+        )
 
         if client is None:
             self._client = httpx.Client(base_url=resolved_base_url)
@@ -23,12 +27,27 @@ class NutritionServiceClient:
         else:
             self._client = client
             self._owns_client = False
-            injected_base_url = str(client.base_url)
-            effective_base_url = resolved_base_url if explicit_base_url else (injected_base_url or _DEFAULT_BASE_URL)
+            injected_base_url = self._normalize_base_url(str(client.base_url))
+            effective_base_url = (
+                resolved_base_url
+                if explicit_base_url
+                else (injected_base_url or _DEFAULT_BASE_URL)
+            )
 
         self._analyze_url = urljoin(effective_base_url.rstrip("/") + "/", "api/nutrition/v1/analyze")
         self._select_url = urljoin(effective_base_url.rstrip("/") + "/", "api/nutrition/v1/select")
         self._correct_url = urljoin(effective_base_url.rstrip("/") + "/", "api/nutrition/v1/correct")
+
+    @staticmethod
+    def _normalize_base_url(base_url: Any) -> str:
+        if base_url in (_UNSET, None):
+            return ""
+        normalized = str(base_url).strip()
+        return normalized
+
+    @classmethod
+    def _has_explicit_base_url(cls, base_url: Any) -> bool:
+        return bool(cls._normalize_base_url(base_url))
 
     def analyze_meal(self, payload: dict[str, Any]) -> Any:
         response = self._client.post(self._analyze_url, json=payload)
