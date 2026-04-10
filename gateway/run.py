@@ -534,6 +534,8 @@ class GatewayRunner:
         # Track pending /update prompt responses per session.
         # Key: session_key, Value: True when a prompt is waiting for user input.
         self._update_prompt_pending: Dict[str, bool] = {}
+        self._nutrition_state_store = None
+        self._nutrition_bridge = None
 
         # Persistent Honcho managers keyed by gateway session key.
         # This preserves write_frequency="session" semantics across short-lived
@@ -860,6 +862,25 @@ class GatewayRunner:
         self._exit_cleanly = True
         self._exit_reason = reason
         self._shutdown_event.set()
+
+    def _nutrition_bot_enabled(self) -> bool:
+        return os.getenv("HERMES_NUTRITION_BOT") == "1"
+
+    def _get_nutrition_state_store(self):
+        if getattr(self, "_nutrition_state_store", None) is None:
+            from gateway.nutrition_state import NutritionStateStore
+
+            self._nutrition_state_store = NutritionStateStore()
+        return self._nutrition_state_store
+
+    def _get_nutrition_bridge(self):
+        if getattr(self, "_nutrition_bridge", None) is None:
+            from gateway.nutrition_bridge import NutritionBridge
+
+            self._nutrition_bridge = NutritionBridge(
+                state_store=self._get_nutrition_state_store()
+            )
+        return self._nutrition_bridge
     
     @staticmethod
     def _load_prefill_messages() -> List[Dict[str, Any]]:
@@ -1859,6 +1880,33 @@ class GatewayRunner:
                 _update_prompts.pop(_quick_key, None)
                 label = response_text if len(response_text) <= 20 else response_text[:20] + "…"
                 return f"✓ Sent `{label}` to the update process."
+
+        if (
+            self._nutrition_bot_enabled()
+            and source.platform == Platform.TELEGRAM
+            and source.chat_type == "dm"
+        ):
+            nutrition_bridge = self._get_nutrition_bridge()
+            nutrition_state = self._get_nutrition_state_store()
+            raw_text = (event.text or "").strip()
+
+            if raw_text.startswith("nc:"):
+                return await nutrition_bridge.handle_candidate_selection(event, _quick_key)
+
+            if event.message_type == MessageType.PHOTO and event.media_urls:
+                adapter = self.adapters.get(source.platform)
+                return await nutrition_bridge.handle_photo_event(
+                    event,
+                    _quick_key,
+                    adapter=adapter,
+                )
+
+            if (
+                nutrition_state.get_pending_candidate_set(_quick_key) is not None
+                and raw_text
+                and not event.is_command()
+            ):
+                return await nutrition_bridge.handle_correction(event, _quick_key)
 
         # PRIORITY handling when an agent is already running for this session.
         # Default behavior is to interrupt immediately so user text/stop messages

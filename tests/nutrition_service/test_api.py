@@ -156,6 +156,64 @@ def test_analyze_meal_falls_back_to_default_base_url_for_bare_injected_client():
     assert str(requests_seen[0].url) == "http://127.0.0.1:8781/api/nutrition/v1/analyze"
 
 
+def test_select_candidate_posts_json_and_returns_response():
+    requests_seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests_seen.append(request)
+        return httpx.Response(200, json={"logged": True, "message": "done"})
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(base_url="http://ignored.test", transport=transport)
+    service_client = NutritionServiceClient(base_url="http://nutrition.test", client=client)
+
+    response = service_client.select_candidate(
+        {
+            "session_id": "telegram:dm:1",
+            "candidate_set_id": "set-1",
+            "candidate_id": "cand-1",
+        }
+    )
+
+    assert response == {"logged": True, "message": "done"}
+    assert len(requests_seen) == 1
+    assert str(requests_seen[0].url) == "http://nutrition.test/api/nutrition/v1/select"
+    assert json.loads(requests_seen[0].content) == {
+        "session_id": "telegram:dm:1",
+        "candidate_set_id": "set-1",
+        "candidate_id": "cand-1",
+    }
+
+
+def test_correct_candidate_posts_json_and_returns_response():
+    requests_seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests_seen.append(request)
+        return httpx.Response(200, json={"logged": True, "message": "done"})
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(base_url="http://ignored.test", transport=transport)
+    service_client = NutritionServiceClient(base_url="http://nutrition.test", client=client)
+
+    response = service_client.correct_candidate(
+        {
+            "session_id": "telegram:dm:1",
+            "candidate_set_id": "set-1",
+            "correction_text": "actually two eggs",
+        }
+    )
+
+    assert response == {"logged": True, "message": "done"}
+    assert len(requests_seen) == 1
+    assert str(requests_seen[0].url) == "http://nutrition.test/api/nutrition/v1/correct"
+    assert json.loads(requests_seen[0].content) == {
+        "session_id": "telegram:dm:1",
+        "candidate_set_id": "set-1",
+        "correction_text": "actually two eggs",
+    }
+
+
 def test_serve_command_runs_uvicorn_with_settings(monkeypatch):
     app = object()
     captured = {}

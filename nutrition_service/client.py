@@ -27,9 +27,21 @@ class NutritionServiceClient:
             effective_base_url = resolved_base_url if explicit_base_url else (injected_base_url or _DEFAULT_BASE_URL)
 
         self._analyze_url = urljoin(effective_base_url.rstrip("/") + "/", "api/nutrition/v1/analyze")
+        self._select_url = urljoin(effective_base_url.rstrip("/") + "/", "api/nutrition/v1/select")
+        self._correct_url = urljoin(effective_base_url.rstrip("/") + "/", "api/nutrition/v1/correct")
 
     def analyze_meal(self, payload: dict[str, Any]) -> Any:
         response = self._client.post(self._analyze_url, json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def select_candidate(self, payload: dict[str, Any]) -> Any:
+        response = self._client.post(self._select_url, json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def correct_candidate(self, payload: dict[str, Any]) -> Any:
+        response = self._client.post(self._correct_url, json=payload)
         response.raise_for_status()
         return response.json()
 

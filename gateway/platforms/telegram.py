@@ -1380,6 +1380,41 @@ class TelegramAdapter(BasePlatformAdapter):
             return
         data = query.data
 
+        if data.startswith("nc:"):
+            if not query.message:
+                await query.answer(text="This nutrition selection has no chat context.")
+                return
+
+            chat = query.message.chat
+            chat_type = "dm"
+            if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP, "group", "supergroup"):
+                chat_type = "group"
+            elif chat.type in (ChatType.CHANNEL, "channel"):
+                chat_type = "channel"
+
+            source = self.build_source(
+                chat_id=str(chat.id),
+                chat_name=chat.title or (chat.full_name if hasattr(chat, "full_name") else None),
+                chat_type=chat_type,
+                user_id=str(query.from_user.id) if query.from_user else None,
+                user_name=query.from_user.full_name if query.from_user else None,
+                thread_id=(
+                    str(query.message.message_thread_id)
+                    if getattr(query.message, "message_thread_id", None)
+                    else None
+                ),
+            )
+            event = MessageEvent(
+                text=data,
+                source=source,
+                raw_message=query.message,
+                message_id=str(query.message.message_id),
+                internal=True,
+            )
+            await query.answer()
+            await self.handle_message(event)
+            return
+
         # --- Model picker callbacks ---
         if data.startswith(("mp:", "mm:", "mb", "mx", "mg:")):
             chat_id = str(query.message.chat_id) if query.message else None
