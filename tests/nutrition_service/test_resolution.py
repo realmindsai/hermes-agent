@@ -1,4 +1,47 @@
+from pydantic import ValidationError
+
+from nutrition_service.contracts import CandidateModel
 from nutrition_service.resolution import choose_packaged_profile, rank_candidates
+
+
+def test_candidate_model_accepts_required_fields():
+    candidate = CandidateModel(
+        candidate_id="cand-1",
+        title="Protein bar",
+        confidence=0.91,
+        reason_text="matched wrapper text",
+    )
+
+    assert candidate.candidate_id == "cand-1"
+    assert candidate.title == "Protein bar"
+    assert candidate.confidence == 0.91
+    assert candidate.reason_text == "matched wrapper text"
+
+
+def test_candidate_model_rejects_missing_confidence():
+    try:
+        CandidateModel(
+            candidate_id="cand-2",
+            title="Protein bar",
+            reason_text="matched wrapper text",
+        )
+    except ValidationError as exc:
+        assert "confidence" in str(exc)
+    else:
+        raise AssertionError("Expected ValidationError for missing confidence")
+
+
+def test_candidate_model_rejects_missing_reason_text():
+    try:
+        CandidateModel(
+            candidate_id="cand-3",
+            title="Protein bar",
+            confidence=0.91,
+        )
+    except ValidationError as exc:
+        assert "reason_text" in str(exc)
+    else:
+        raise AssertionError("Expected ValidationError for missing reason_text")
 
 
 def test_choose_packaged_profile_prefers_label_observation():
