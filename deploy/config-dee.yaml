@@ -36,3 +36,6 @@ mcp_servers:
       Authorization: "Bearer ${JOT_TOKEN}"
   workspace:
     url: "http://172.17.0.1:3102/mcp"
+    tools:
+      exclude:
+        - draft_email
