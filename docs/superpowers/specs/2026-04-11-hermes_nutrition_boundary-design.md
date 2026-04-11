@@ -2,7 +2,7 @@
 
 ## Goal
 
-Separate Hermes gateway concerns from nutrition-service concerns so the nutrition bot can operate as a standalone service with a stable versioned API, while Hermes remains only one client that happens to be good at getting Telegram meal photos into the system.
+Separate Hermes gateway concerns from nutrition-service concerns so the nutrition bot can operate as a standalone service in its own repo with a stable versioned API, while Hermes remains only one client that happens to be good at getting Telegram meal photos into the system.
 
 This design should make three things explicit:
 
@@ -12,9 +12,9 @@ This design should make three things explicit:
 
 ## Current State
 
-The current branch has moved useful behavior into `nutrition_service/`, but the runtime and documentation boundaries are still muddy:
+The nutrition work started inside `hermes-agent`, but the runtime and documentation boundaries are still muddy:
 
-- the nutrition service has its own FastAPI app, CLI, Postgres settings, and Totoro runtime artifacts
+- nutrition-service code currently lives inside `hermes-agent` under `nutrition_service/`
 - Hermes currently talks to the service through `nutrition_service/client.py`
 - the public-ish request shape still reflects Hermes-local assumptions such as local image-path handoff
 - Totoro deployment notes currently mix Hermes gateway runtime, nutrition-service runtime, and the interface between them into one blended install story
@@ -36,6 +36,7 @@ The real boundary should be behavior, not tables and not local runtime details.
 
 ### Architectural
 
+- nutrition-service must live in its own repo at `/Users/dewoller/code/personal/nutrition`
 - nutrition-service must be documented and operated as a standalone service
 - Hermes must be documented as a client of nutrition-service, not as the owner of nutrition logic
 - the service boundary must be a versioned API, not a shared database contract
@@ -75,7 +76,7 @@ Hermes may not depend on:
 
 ## Chosen Approach
 
-Use a standalone versioned HTTP API backed by a private Postgres database. Split documentation into service-owned runbooks plus a separate API contract.
+Use a standalone versioned HTTP API backed by a private Postgres database. Move nutrition-service into its own repo and split documentation into service-owned runbooks plus a separate API contract.
 
 ### Why Not A Shared Database
 
@@ -101,7 +102,7 @@ A versioned API gives future clients one stable integration target:
 
 ## Documentation Split
 
-The current blended deployment note should be replaced by three authoritative documents plus one lightweight index.
+The current blended deployment note should be replaced by three authoritative documents plus one lightweight index, split across the Hermes repo and the nutrition repo.
 
 ### 1. Hermes Gateway Runbook
 
@@ -128,7 +129,7 @@ Does not own:
 
 Path:
 
-- `deploy/totoro_nutrition_service.md`
+- `/Users/dewoller/code/personal/nutrition/deploy/totoro_nutrition_service.md`
 
 Owns:
 
@@ -147,7 +148,7 @@ Does not assume Hermes exists. Hermes may be mentioned as one possible client, b
 
 Path:
 
-- `docs/api/nutrition_service_v1.md`
+- `/Users/dewoller/code/personal/nutrition/docs/api/nutrition_service_v1.md`
 
 Owns:
 
@@ -164,7 +165,7 @@ This is the contract humans read first.
 
 Path:
 
-- `nutrition_service/openapi.yaml`
+- `/Users/dewoller/code/personal/nutrition/openapi/nutrition_service_v1.yaml`
 
 Owns:
 
@@ -172,6 +173,28 @@ Owns:
 - canonical endpoint schemas for client generation and contract validation
 
 This is the contract machines and tests read first.
+
+### Repo Ownership
+
+`/Users/dewoller/code/personal/hermes-agent` owns:
+
+- Telegram intake
+- Hermes nutrition client adapter
+- candidate rendering
+- correction forwarding
+- Hermes-side runbooks
+- Hermes-side integration tests
+
+`/Users/dewoller/code/personal/nutrition` owns:
+
+- FastAPI service
+- Postgres schema and migrations
+- dataset importers
+- OpenAPI spec
+- nutrition-service runbooks
+- service-side tests
+
+There should be no shared database contract and no shared internal library between them in v1. The boundary is HTTP.
 
 ### 5. Totoro Index Page
 
@@ -315,6 +338,38 @@ The current internal service flow still uses Hermes-local `image_paths`. That is
 
 The important rule is simple: the docs define the target boundary, not the current shortcut.
 
+## Repo Migration
+
+The nutrition-service code should move out of `hermes-agent` into its own repo at `/Users/dewoller/code/personal/nutrition`.
+
+### Target Repo Split
+
+`hermes-agent` keeps:
+
+- Hermes gateway code
+- nutrition-service HTTP client/adapter code
+- Hermes-side config and runbook
+- Hermes-side integration tests
+
+`nutrition` gains:
+
+- `nutrition_service/`
+- API contract docs and OpenAPI spec
+- service deploy docs
+- Postgres bootstrap and migration artifacts
+- nutrition-service tests
+
+### Migration Sequence
+
+1. Freeze the boundary in docs.
+2. Create the standalone `nutrition` repo skeleton at `/Users/dewoller/code/personal/nutrition`.
+3. Move nutrition-owned code and docs into that repo.
+4. Leave Hermes with only client-side integration code.
+5. Replace blended deployment docs with links to the two runbooks.
+6. Replan implementation from the new two-repo boundary.
+
+The current in-repo implementation plan should be treated as stale after this change. It was designed around nutrition-service still living inside `hermes-agent`.
+
 ## Testing Strategy
 
 ### Contract Tests
@@ -351,6 +406,7 @@ The important rule is simple: the docs define the target boundary, not the curre
 
 ## Acceptance Criteria
 
+- nutrition-service is defined as a separate repo at `/Users/dewoller/code/personal/nutrition`.
 - Hermes gateway documentation is separated from nutrition-service runtime documentation.
 - The nutrition-service API is documented as a standalone versioned contract.
 - The public contract defines multipart image upload for `POST /analyze` rather than filesystem `image_paths`.
