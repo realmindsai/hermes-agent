@@ -92,7 +92,7 @@ async def test_photo_renders_inline_keyboard(mock_client, mock_adapter, mock_run
 
 @pytest.mark.asyncio
 async def test_photo_malformed_json_sends_error(mock_client, mock_adapter, mock_runner):
-    mock_runner._run_agent = AsyncMock(return_value={"response": "not json"})
+    mock_runner._run_agent = AsyncMock(return_value={"final_response": "not json"})
     bridge = NutritionBridge(client=mock_client)
     await bridge.handle_photo_event(_event(), "sess", mock_runner, mock_adapter)
 
