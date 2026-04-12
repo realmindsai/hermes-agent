@@ -394,7 +394,8 @@ class MessageEvent:
     # Original platform data
     raw_message: Any = None
     message_id: Optional[str] = None
-    
+    callback_data: Optional[str] = None  # populated for inline keyboard callbacks (e.g. nc: prefix)
+
     # Media attachments
     # media_urls: local file paths (for vision tool access)
     media_urls: List[str] = field(default_factory=list)
