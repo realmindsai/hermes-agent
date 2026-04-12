@@ -1375,9 +1375,15 @@ class TelegramAdapter(BasePlatformAdapter):
         """Build a MessageEvent from a Telegram inline keyboard callback query."""
         chat_id = str(query.message.chat_id) if query.message else None
         user_id = str(query.from_user.id) if query.from_user else None
+        # Derive chat_type from actual Telegram chat type
+        chat_type = "dm"
+        if query.message and getattr(query.message, "chat", None):
+            raw_type = query.message.chat.type  # "private", "group", "supergroup", "channel"
+            if raw_type in ("group", "supergroup", "channel"):
+                chat_type = "group"
         source = self.build_source(
             chat_id=chat_id or user_id or "unknown",
-            chat_type="dm",  # nutrition bot is DM-only; callbacks only arrive in DMs
+            chat_type=chat_type,
             user_id=user_id,
         )
         return MessageEvent(
