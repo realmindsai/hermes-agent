@@ -1371,6 +1371,23 @@ class TelegramAdapter(BasePlatformAdapter):
             # Catch-all (e.g. page counter button "mx:noop")
             await query.answer()
 
+    def _build_callback_event(self, query: "CallbackQuery", data: str) -> "MessageEvent":
+        """Build a MessageEvent from a Telegram inline keyboard callback query."""
+        chat_id = str(query.message.chat_id) if query.message else None
+        user_id = str(query.from_user.id) if query.from_user else None
+        source = self.build_source(
+            chat_id=chat_id or user_id or "unknown",
+            chat_type="dm",  # nutrition bot is DM-only; callbacks only arrive in DMs
+            user_id=user_id,
+        )
+        return MessageEvent(
+            text="",
+            message_type=MessageType.TEXT,
+            source=source,
+            message_id=str(query.message.message_id) if query.message else None,
+            callback_data=data,
+        )
+
     async def _handle_callback_query(
         self, update: "Update", context: "ContextTypes.DEFAULT_TYPE"
     ) -> None:
@@ -1438,32 +1455,38 @@ class TelegramAdapter(BasePlatformAdapter):
             return
 
         # --- Update prompt callbacks ---
-        if not data.startswith("update_prompt:"):
+        if data.startswith("update_prompt:"):
+            answer = data.split(":", 1)[1]  # "y" or "n"
+            await query.answer(text=f"Sent '{answer}' to the update process.")
+            # Edit the message to show the choice and remove buttons
+            label = "Yes" if answer == "y" else "No"
+            try:
+                await query.edit_message_text(
+                    text=f"⚕ Update prompt answered: *{label}*",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=None,
+                )
+            except Exception:
+                pass  # non-fatal if edit fails
+            # Write the response file
+            try:
+                from hermes_constants import get_hermes_home
+                home = get_hermes_home()
+                response_path = home / ".update_response"
+                tmp = response_path.with_suffix(".tmp")
+                tmp.write_text(answer)
+                tmp.replace(response_path)
+                logger.info("Telegram update prompt answered '%s' by user %s",
+                            answer, getattr(query.from_user, "id", "unknown"))
+            except Exception as exc:
+                logger.error("Failed to write update response from callback: %s", exc)
             return
-        answer = data.split(":", 1)[1]  # "y" or "n"
-        await query.answer(text=f"Sent '{answer}' to the update process.")
-        # Edit the message to show the choice and remove buttons
-        label = "Yes" if answer == "y" else "No"
-        try:
-            await query.edit_message_text(
-                text=f"⚕ Update prompt answered: *{label}*",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=None,
-            )
-        except Exception:
-            pass  # non-fatal if edit fails
-        # Write the response file
-        try:
-            from hermes_constants import get_hermes_home
-            home = get_hermes_home()
-            response_path = home / ".update_response"
-            tmp = response_path.with_suffix(".tmp")
-            tmp.write_text(answer)
-            tmp.replace(response_path)
-            logger.info("Telegram update prompt answered '%s' by user %s",
-                        answer, getattr(query.from_user, "id", "unknown"))
-        except Exception as exc:
-            logger.error("Failed to write update response from callback: %s", exc)
+
+        # --- Unknown callbacks (nc: and future extension points) ---
+        # Answer first — clears Telegram's loading spinner on the button.
+        await query.answer()
+        event = self._build_callback_event(query, data)
+        await self.handle_message(event)  # use handle_message, not _message_handler directly
 
     async def send_voice(
         self,
