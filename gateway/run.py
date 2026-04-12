@@ -780,6 +780,50 @@ class GatewayRunner:
             thread_sessions_per_user=getattr(config, "thread_sessions_per_user", False),
         )
 
+    def _nutrition_bot_enabled(self) -> bool:
+        """True when HERMES_NUTRITION_BOT=1 is set."""
+        return os.getenv("HERMES_NUTRITION_BOT", "").strip() == "1"
+
+    def _get_nutrition_bridge(self):
+        """Lazily initialise NutritionBridge (one per runner)."""
+        if not hasattr(self, "_nutrition_bridge"):
+            from gateway.nutrition_bridge import NutritionBridge
+            self._nutrition_bridge = NutritionBridge()
+        return self._nutrition_bridge
+
+    async def _handle_nutrition_message(self, event, adapter) -> bool:
+        """Handle a message in nutrition-bot mode.
+
+        Returns True if the message was handled (caller should return immediately).
+        Returns False if the message should fall through to the normal agent loop.
+        """
+        from gateway.config import Platform
+        from gateway.session import build_session_key
+
+        source = event.source
+        if source.platform != Platform.TELEGRAM or source.chat_type != "dm":
+            return False  # drop silently
+
+        config = getattr(self, "config", None)
+        session_key = build_session_key(
+            source,
+            group_sessions_per_user=getattr(config, "group_sessions_per_user", True),
+            thread_sessions_per_user=getattr(config, "thread_sessions_per_user", False),
+        )
+        chat_id = source.chat_id
+        bridge = self._get_nutrition_bridge()
+
+        if event.callback_data and event.callback_data.startswith("nc:"):
+            await bridge.handle_candidate_selection(event.callback_data, session_key, adapter, chat_id)
+            return True
+
+        if event.media_urls:
+            await bridge.handle_photo_event(event, session_key, self, adapter)
+            return True
+
+        await bridge.handle_correction(event.text or "", session_key, adapter, chat_id)
+        return True
+
     def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:
         from agent.smart_model_routing import resolve_turn_route
 
@@ -1916,6 +1960,13 @@ class GatewayRunner:
                 )
                 del self._running_agents[_quick_key]
                 self._running_agents_ts.pop(_quick_key, None)
+
+        # --- Nutrition bot intercept ---
+        if self._nutrition_bot_enabled():
+            _nutrition_adapter = self.adapters.get(event.source.platform)
+            handled = await self._handle_nutrition_message(event, _nutrition_adapter)
+            if handled:
+                return
 
         if _quick_key in self._running_agents:
             if event.get_command() == "status":

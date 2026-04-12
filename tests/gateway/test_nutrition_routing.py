@@ -73,3 +73,104 @@ async def test_update_prompt_callback_not_dispatched_to_handle_message():
         await adapter._handle_callback_query(update, MagicMock())
 
     mock_hm.assert_not_called()  # update_prompt handled locally, not dispatched
+
+
+# ── run.py gate routing ───────────────────────────────────────────────────────
+
+def _make_runner_with_bridge(bridge_mock):
+    """Minimal GatewayRunner with a pre-injected bridge mock."""
+    from gateway.run import GatewayRunner
+    runner = object.__new__(GatewayRunner)
+    runner.config = MagicMock()
+    runner.config.group_sessions_per_user = True
+    runner.config.thread_sessions_per_user = False
+    runner._nutrition_bridge = bridge_mock  # inject directly — bypasses lazy init
+    return runner
+
+
+def _dm_source(platform=Platform.TELEGRAM, chat_type="dm"):
+    return SessionSource(
+        platform=platform,
+        chat_id="456",
+        user_id="456",
+        chat_type=chat_type,
+    )
+
+
+@pytest.mark.asyncio
+async def test_gate_routes_photo_to_handle_photo_event(monkeypatch):
+    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+    bridge = MagicMock()
+    bridge.handle_photo_event = AsyncMock()
+    runner = _make_runner_with_bridge(bridge)
+
+    event = MessageEvent(text="", source=_dm_source(), media_urls=["file:///photo.jpg"])
+    await runner._handle_nutrition_message(event, MagicMock())
+
+    bridge.handle_photo_event.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_gate_routes_nc_callback_to_handle_candidate_selection(monkeypatch):
+    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+    bridge = MagicMock()
+    bridge.handle_candidate_selection = AsyncMock()
+    runner = _make_runner_with_bridge(bridge)
+
+    event = MessageEvent(text="", source=_dm_source(), callback_data="nc:set1:cand1")
+    await runner._handle_nutrition_message(event, MagicMock())
+
+    bridge.handle_candidate_selection.assert_called_once()
+    args = bridge.handle_candidate_selection.call_args[0]
+    assert args[0] == "nc:set1:cand1"
+
+
+@pytest.mark.asyncio
+async def test_gate_routes_plain_text_to_handle_correction(monkeypatch):
+    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+    bridge = MagicMock()
+    bridge.handle_correction = AsyncMock()
+    runner = _make_runner_with_bridge(bridge)
+
+    event = MessageEvent(text="hello", source=_dm_source())
+    await runner._handle_nutrition_message(event, MagicMock())
+
+    bridge.handle_correction.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_gate_drops_non_dm_silently(monkeypatch):
+    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+    bridge = MagicMock()
+    bridge.handle_photo_event = AsyncMock()
+    bridge.handle_candidate_selection = AsyncMock()
+    bridge.handle_correction = AsyncMock()
+    runner = _make_runner_with_bridge(bridge)
+
+    group_source = SessionSource(
+        platform=Platform.TELEGRAM, chat_id="grp1", user_id="u1", chat_type="group"
+    )
+    event = MessageEvent(text="hi group", source=group_source)
+    result = await runner._handle_nutrition_message(event, MagicMock())
+
+    assert result is False
+    bridge.handle_photo_event.assert_not_called()
+    bridge.handle_candidate_selection.assert_not_called()
+    bridge.handle_correction.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_gate_drops_non_telegram_silently(monkeypatch):
+    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+    bridge = MagicMock()
+    bridge.handle_correction = AsyncMock()
+    runner = _make_runner_with_bridge(bridge)
+
+    discord_source = SessionSource(
+        platform=Platform.DISCORD, chat_id="ch1", user_id="u1", chat_type="dm"
+    )
+    event = MessageEvent(text="hello", source=discord_source)
+    result = await runner._handle_nutrition_message(event, MagicMock())
+
+    assert result is False
+    bridge.handle_correction.assert_not_called()
