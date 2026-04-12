@@ -1,5 +1,10 @@
 """Tests for nutrition_client.py and MessageEvent.callback_data."""
+import pytest
+import httpx
+from unittest.mock import AsyncMock, MagicMock
+
 from gateway.platforms.base import MessageEvent
+from gateway.nutrition_client import NutritionClient
 
 
 def test_message_event_has_callback_data_field():
@@ -11,12 +16,6 @@ def test_message_event_has_callback_data_field():
 def test_message_event_callback_data_defaults_to_none():
     event = MessageEvent(text="hello")
     assert event.callback_data is None
-
-
-import pytest
-import httpx
-from unittest.mock import AsyncMock, MagicMock
-from gateway.nutrition_client import NutritionClient
 
 
 def _resp(status_code: int, json_data=None) -> AsyncMock:
@@ -49,6 +48,7 @@ async def test_analyze_sends_correct_payload(http):
         json={"session_id": "sess1", "observations": [{"name": "apple", "confidence": 0.9}]},
     )
     assert result["candidate_set_id"] == "set1"
+    http.post.return_value.raise_for_status.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -64,6 +64,19 @@ async def test_get_pending_returns_data_on_200(http):
     nc = NutritionClient(client=http)
     result = await nc.get_pending("sess1")
     assert result["candidate_set_id"] == "set1"
+    http.get.return_value.raise_for_status.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_pending_raises_on_500(http):
+    mock = _resp(500)
+    mock.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "500", request=MagicMock(), response=MagicMock()
+    )
+    http.get.return_value = mock
+    nc = NutritionClient(client=http)
+    with pytest.raises(httpx.HTTPStatusError):
+        await nc.get_pending("sess1")
 
 
 @pytest.mark.asyncio
@@ -76,6 +89,7 @@ async def test_select_sends_correct_payload(http):
         json={"session_id": "sess1", "candidate_set_id": "set1", "candidate_id": "cand1"},
     )
     assert result["logged"] is True
+    http.post.return_value.raise_for_status.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -92,6 +106,7 @@ async def test_correct_sends_correct_payload(http):
         },
     )
     assert result["logged"] is True
+    http.post.return_value.raise_for_status.assert_called_once()
 
 
 @pytest.mark.asyncio
