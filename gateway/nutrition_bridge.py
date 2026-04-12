@@ -57,10 +57,22 @@ class NutritionBridge:
         """Analyse a food photo via the agent loop and present candidates."""
         chat_id = event.source.chat_id
 
-        # Run agent loop — Codex sees photo + memory, SOUL constrains output to JSON
+        # Enrich message with vision descriptions so the agent can read the photo
+        message_text = event.text or ""
+        if event.media_urls:
+            try:
+                message_text = await runner._enrich_message_with_vision(
+                    message_text, list(event.media_urls)
+                )
+            except Exception as exc:
+                logger.error("Vision enrichment failed: %s", exc)
+                await adapter.send(chat_id, _MSG_BAD_PHOTO)
+                return
+
+        # Run agent loop — agent sees vision-enriched description, SOUL constrains output to JSON
         try:
             result = await runner._run_agent(
-                message=event.text or "",
+                message=message_text,
                 context_prompt=NUTRITION_SOUL,
                 history=[],
                 source=event.source,
@@ -91,8 +103,13 @@ class NutritionBridge:
             await adapter.send(chat_id, _MSG_UNAVAILABLE)
             return
 
+        candidate_set_id = data.get("candidate_set_id")
+        if not candidate_set_id:
+            logger.error("nutrition-service returned no candidate_set_id in analyze response")
+            await adapter.send(chat_id, _MSG_UNAVAILABLE)
+            return
         await self._send_candidate_keyboard(
-            adapter, chat_id, data["candidate_set_id"], data.get("candidates", [])
+            adapter, chat_id, candidate_set_id, data.get("candidates", [])
         )
 
     async def handle_candidate_selection(
@@ -136,8 +153,14 @@ class NutritionBridge:
             await adapter.send(chat_id, _MSG_SEND_PHOTO)
             return
 
+        candidate_set_id = pending.get("candidate_set_id") if isinstance(pending, dict) else None
+        if not candidate_set_id:
+            logger.error("nutrition-service pending response missing candidate_set_id")
+            await adapter.send(chat_id, _MSG_UNAVAILABLE)
+            return
+
         try:
-            await self._client.correct(session_key, pending["candidate_set_id"], text)
+            await self._client.correct(session_key, candidate_set_id, text)
         except Exception as exc:
             logger.error("nutrition-service correct failed: %s", exc)
             await adapter.send(chat_id, _MSG_UNAVAILABLE)
@@ -161,13 +184,30 @@ class NutritionBridge:
             await adapter.send(chat_id, _MSG_BAD_PHOTO)
             return
 
-        buttons = [
-            InlineKeyboardButton(
-                text=c.get("label", c.get("id", "?")),
-                callback_data=f"nc:{candidate_set_id}:{c['id']}",
+        buttons = []
+        for c in candidates:
+            cand_id = c.get("id")
+            if not cand_id:
+                logger.warning("candidate missing id field, skipping: %r", c)
+                continue
+            cb_data = f"nc:{candidate_set_id}:{cand_id}"
+            if len(cb_data.encode()) > 64:
+                logger.error(
+                    "callback_data exceeds Telegram 64-byte limit (%d bytes); "
+                    "nutrition-service IDs are too long",
+                    len(cb_data.encode()),
+                )
+                await adapter.send(chat_id, _MSG_UNAVAILABLE)
+                return
+            buttons.append(
+                InlineKeyboardButton(
+                    text=c.get("label", cand_id),
+                    callback_data=cb_data,
+                )
             )
-            for c in candidates
-        ]
+        if not buttons:
+            await adapter.send(chat_id, _MSG_BAD_PHOTO)
+            return
         await adapter._bot.send_message(
             chat_id=chat_id,
             text="Which one?",

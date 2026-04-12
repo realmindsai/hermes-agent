@@ -32,6 +32,7 @@ def mock_runner():
     r._run_agent = AsyncMock(
         return_value={"final_response": '[{"name": "apple", "confidence": 0.9}]'}
     )
+    r._enrich_message_with_vision = AsyncMock(return_value="Vision: an apple on a plate")
     return r
 
 
@@ -111,6 +112,43 @@ async def test_photo_service_unavailable_sends_error(mock_client, mock_adapter, 
     assert "unavailable" in mock_adapter.send.call_args[0][1].lower()
 
 
+@pytest.mark.asyncio
+async def test_photo_vision_enrichment_called(mock_client, mock_adapter, mock_runner):
+    """Vision enrichment must be called so the model can see the photo."""
+    mock_client.analyze = AsyncMock(return_value={
+        "candidate_set_id": "s1", "candidates": [{"id": "c1", "label": "Apple"}],
+    })
+    bridge = NutritionBridge(client=mock_client)
+    event = _event(media_urls=["file:///img.jpg"])
+    await bridge.handle_photo_event(event, "sess", mock_runner, mock_adapter)
+
+    mock_runner._enrich_message_with_vision.assert_called_once_with("", ["file:///img.jpg"])
+    # _run_agent receives the enriched text, not empty string
+    call_kwargs = mock_runner._run_agent.call_args[1]
+    assert call_kwargs["message"] == "Vision: an apple on a plate"
+
+
+@pytest.mark.asyncio
+async def test_photo_vision_enrichment_failure_sends_bad_photo(mock_client, mock_adapter, mock_runner):
+    mock_runner._enrich_message_with_vision = AsyncMock(side_effect=Exception("vision failed"))
+    bridge = NutritionBridge(client=mock_client)
+    await bridge.handle_photo_event(_event(), "sess", mock_runner, mock_adapter)
+
+    mock_adapter.send.assert_called_once()
+    assert "try again" in mock_adapter.send.call_args[0][1].lower()
+    mock_runner._run_agent.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_photo_missing_candidate_set_id_sends_unavailable(mock_client, mock_adapter, mock_runner):
+    mock_client.analyze = AsyncMock(return_value={"candidates": [{"id": "c1"}]})
+    bridge = NutritionBridge(client=mock_client)
+    await bridge.handle_photo_event(_event(), "sess", mock_runner, mock_adapter)
+
+    mock_adapter.send.assert_called_once()
+    assert "unavailable" in mock_adapter.send.call_args[0][1].lower()
+
+
 # ── handle_candidate_selection ────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -181,6 +219,17 @@ async def test_correction_server_error_sends_unavailable(mock_client, mock_adapt
 @pytest.mark.asyncio
 async def test_correction_get_pending_error_sends_unavailable(mock_client, mock_adapter):
     mock_client.get_pending = AsyncMock(side_effect=Exception("timeout"))
+    bridge = NutritionBridge(client=mock_client)
+    await bridge.handle_correction("some text", "sess", mock_adapter, "123")
+
+    mock_client.correct.assert_not_called()
+    assert "unavailable" in mock_adapter.send.call_args[0][1].lower()
+
+
+@pytest.mark.asyncio
+async def test_correction_missing_candidate_set_id_sends_unavailable(mock_client, mock_adapter):
+    """pending response without candidate_set_id must not cause KeyError."""
+    mock_client.get_pending = AsyncMock(return_value={"candidates": []})
     bridge = NutritionBridge(client=mock_client)
     await bridge.handle_correction("some text", "sess", mock_adapter, "123")
 

@@ -25,8 +25,14 @@ from gateway.session import SessionEntry, SessionSource, build_session_key
 
 def _ensure_telegram_mock():
     """Install mock telegram modules so TelegramAdapter can be imported."""
-    if "telegram" in sys.modules and hasattr(sys.modules["telegram"], "__file__"):
-        return  # Real library installed
+    # Attempt a real import first; setdefault would otherwise win over the real
+    # library if telegram hasn't been loaded yet when this conftest is collected.
+    try:
+        import telegram as _tg
+        if hasattr(_tg, "__file__"):
+            return  # Real library installed
+    except ImportError:
+        pass
 
     telegram_mod = MagicMock()
     telegram_mod.Update = MagicMock()
