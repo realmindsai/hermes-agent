@@ -98,8 +98,7 @@ def _dm_source(platform=Platform.TELEGRAM, chat_type="dm"):
 
 
 @pytest.mark.asyncio
-async def test_gate_routes_photo_to_handle_photo_event(monkeypatch):
-    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+async def test_gate_routes_photo_to_handle_photo_event():
     bridge = MagicMock()
     bridge.handle_photo_event = AsyncMock()
     runner = _make_runner_with_bridge(bridge)
@@ -111,8 +110,7 @@ async def test_gate_routes_photo_to_handle_photo_event(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_gate_routes_nc_callback_to_handle_candidate_selection(monkeypatch):
-    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+async def test_gate_routes_nc_callback_to_handle_candidate_selection():
     bridge = MagicMock()
     bridge.handle_candidate_selection = AsyncMock()
     runner = _make_runner_with_bridge(bridge)
@@ -126,8 +124,7 @@ async def test_gate_routes_nc_callback_to_handle_candidate_selection(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_gate_routes_plain_text_to_handle_correction(monkeypatch):
-    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+async def test_gate_routes_plain_text_to_handle_correction():
     bridge = MagicMock()
     bridge.handle_correction = AsyncMock()
     runner = _make_runner_with_bridge(bridge)
@@ -139,8 +136,7 @@ async def test_gate_routes_plain_text_to_handle_correction(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_gate_drops_non_dm_silently(monkeypatch):
-    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+async def test_gate_drops_non_dm_silently():
     bridge = MagicMock()
     bridge.handle_photo_event = AsyncMock()
     bridge.handle_candidate_selection = AsyncMock()
@@ -160,8 +156,7 @@ async def test_gate_drops_non_dm_silently(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_gate_drops_non_telegram_silently(monkeypatch):
-    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+async def test_gate_drops_non_telegram_silently():
     bridge = MagicMock()
     bridge.handle_correction = AsyncMock()
     runner = _make_runner_with_bridge(bridge)
@@ -174,3 +169,25 @@ async def test_gate_drops_non_telegram_silently(monkeypatch):
 
     assert result is False
     bridge.handle_correction.assert_not_called()
+
+
+# ── _nutrition_bot_enabled gate ───────────────────────────────────────────────
+
+def test_nutrition_bot_enabled_when_env_var_set(monkeypatch):
+    from gateway.run import GatewayRunner
+    runner = object.__new__(GatewayRunner)
+    monkeypatch.setenv("HERMES_NUTRITION_BOT", "1")
+    assert runner._nutrition_bot_enabled() is True
+
+
+def test_nutrition_bot_disabled_by_default():
+    import os
+    from gateway.run import GatewayRunner
+    runner = object.__new__(GatewayRunner)
+    # Ensure env var is not set (use popitem or os.environ.pop safely)
+    env_val = os.environ.pop("HERMES_NUTRITION_BOT", None)
+    try:
+        assert runner._nutrition_bot_enabled() is False
+    finally:
+        if env_val is not None:
+            os.environ["HERMES_NUTRITION_BOT"] = env_val

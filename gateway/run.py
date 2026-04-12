@@ -1962,6 +1962,9 @@ class GatewayRunner:
                 self._running_agents_ts.pop(_quick_key, None)
 
         # --- Nutrition bot intercept ---
+        # NOTE: Runs after stale-eviction and _update_prompt_pending checks.
+        # The nutrition bot is a dedicated instance (HERMES_NUTRITION_BOT=1 set)
+        # that does not run /update, so _update_prompt_pending never fires first.
         if self._nutrition_bot_enabled():
             _nutrition_adapter = self.adapters.get(event.source.platform)
             handled = await self._handle_nutrition_message(event, _nutrition_adapter)
