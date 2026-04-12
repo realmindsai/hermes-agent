@@ -40,7 +40,7 @@ ssh "${HOST}" bash -s <<'REMOTE_SCRIPT'
 set -euo pipefail
 CODE_DIR="/tank/services/active_services/hermes"
 
-for INSTANCE in hermes-dee hermes-tracy; do
+for INSTANCE in hermes-dee hermes-tracy hermes-nutrition-bot; do
     DIR="/tank/services/active_services/${INSTANCE}"
     echo "Setting up ${DIR}..."
     mkdir -p "${DIR}"/{logs,sessions,memories,skills,cache,cron}
@@ -53,14 +53,6 @@ for INSTANCE in hermes-dee hermes-tracy; do
     fi
 done
 REMOTE_SCRIPT
-
-# --- hermes-nutrition-bot ---
-NUTRITION_DIR=/tank/services/active_services/hermes-nutrition-bot
-echo "=== Provisioning hermes-nutrition-bot ==="
-ssh "${HOST}" "mkdir -p ${NUTRITION_DIR}/{logs,sessions,memories,skills,cache,cron}"
-echo "REMINDER: SOPS-encrypt .env using deploy/env-nutrition.example template"
-echo "          Install to /run/secrets/hermes-nutrition-bot/.env on ${HOST}"
-echo "REMINDER: After first start, run: docker exec hermes-nutrition-bot hermes login --provider openai-codex"
 
 # Step 3: Create Python venv and install
 echo ""
@@ -191,3 +183,9 @@ echo ""
 echo "  3. Start services:"
 echo "     sudo systemctl start hermes-dee"
 echo "     sudo systemctl start hermes-tracy"
+echo ""
+echo "  4. hermes-nutrition-bot (Docker Compose, no systemd):"
+echo "     REMINDER: SOPS-encrypt .env using deploy/env-nutrition.example template"
+echo "               Install to /run/secrets/hermes-nutrition-bot/.env on ${HOST}"
+echo "     deploy/deploy.sh ${HOST} nutrition-bot"
+echo "     REMINDER: After first start: docker exec hermes-nutrition-bot hermes login --provider openai-codex"
