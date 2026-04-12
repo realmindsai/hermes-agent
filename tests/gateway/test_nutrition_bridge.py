@@ -149,6 +149,18 @@ async def test_photo_missing_candidate_set_id_sends_unavailable(mock_client, moc
     assert "unavailable" in mock_adapter.send.call_args[0][1].lower()
 
 
+@pytest.mark.asyncio
+async def test_photo_concurrent_request_rejected(mock_client, mock_adapter, mock_runner):
+    """Second photo for same session is rejected while first is processing."""
+    mock_runner._running_agents = {"sess": object()}  # session already running
+    bridge = NutritionBridge(client=mock_client)
+    await bridge.handle_photo_event(_event(), "sess", mock_runner, mock_adapter)
+
+    mock_adapter.send.assert_called_once()
+    assert "wait" in mock_adapter.send.call_args[0][1].lower()
+    mock_runner._run_agent.assert_not_called()
+
+
 # ── handle_candidate_selection ────────────────────────────────────────────────
 
 @pytest.mark.asyncio

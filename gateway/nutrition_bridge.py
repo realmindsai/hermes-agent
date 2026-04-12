@@ -57,6 +57,11 @@ class NutritionBridge:
         """Analyse a food photo via the agent loop and present candidates."""
         chat_id = event.source.chat_id
 
+        # Reject parallel photo submissions for the same session
+        if getattr(runner, "_running_agents", None) and session_key in runner._running_agents:
+            await adapter.send(chat_id, "Still processing your last photo, please wait…")
+            return
+
         # Enrich message with vision descriptions so the agent can read the photo
         message_text = event.text or ""
         if event.media_urls:
@@ -209,7 +214,7 @@ class NutritionBridge:
             await adapter.send(chat_id, _MSG_BAD_PHOTO)
             return
         await adapter._bot.send_message(
-            chat_id=chat_id,
+            chat_id=int(chat_id),
             text="Which one?",
             reply_markup=InlineKeyboardMarkup([buttons]),
         )
