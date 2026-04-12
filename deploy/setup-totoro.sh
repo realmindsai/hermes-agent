@@ -57,7 +57,7 @@ REMOTE_SCRIPT
 # --- hermes-nutrition-bot ---
 NUTRITION_DIR=/tank/services/active_services/hermes-nutrition-bot
 echo "=== Provisioning hermes-nutrition-bot ==="
-ssh "${HOST}" "mkdir -p ${NUTRITION_DIR}/{logs,sessions,memories,skills,cache,cron} && chown -R 1000:1004 ${NUTRITION_DIR}"
+ssh "${HOST}" "mkdir -p ${NUTRITION_DIR}/{logs,sessions,memories,skills,cache,cron}"
 echo "REMINDER: SOPS-encrypt .env using deploy/env-nutrition.example template"
 echo "          Install to /run/secrets/hermes-nutrition-bot/.env on ${HOST}"
 echo "REMINDER: After first start, run: docker exec hermes-nutrition-bot hermes login --provider openai-codex"
