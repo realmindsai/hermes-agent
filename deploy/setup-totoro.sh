@@ -46,7 +46,10 @@ for INSTANCE in hermes-dee hermes-tracy hermes-nutrition-bot; do
     mkdir -p "${DIR}"/{logs,sessions,memories,skills,cache,cron}
 
     # Symlink config from deploy/
-    CONFIG_SRC="${CODE_DIR}/deploy/config-${INSTANCE#hermes-}.yaml"
+    # Map instance name to config filename (nutrition-bot -> nutrition)
+    CONFIG_SUFFIX="${INSTANCE#hermes-}"
+    [ "${CONFIG_SUFFIX}" = "nutrition-bot" ] && CONFIG_SUFFIX="nutrition"
+    CONFIG_SRC="${CODE_DIR}/deploy/config-${CONFIG_SUFFIX}.yaml"
     if [ -f "${CONFIG_SRC}" ]; then
         ln -sf "${CONFIG_SRC}" "${DIR}/config.yaml"
         echo "  config.yaml -> ${CONFIG_SRC}"
